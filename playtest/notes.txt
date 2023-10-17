@@ -1,0 +1,32 @@
+Task 1: get rid of text & context in SearchParams
+
+replace text & context with offsets & prev_char:
+
+----
+
+DFA::AnalyzeSearch:
+
+only check:
+
+if (params->run_forward)
+	BeginPtr(text) == BeginPtr(context)
+	prev_char = BeginPtr(text)[-1];
+else
+    EndPtr(text) == EndPtr(context)
+    prev_char = EndPtr(text)[0] & 0xFF);
+
+
+----
+
+DFA::InlinedSearchLoop
+
+should be split in 3 parts:
+
+- initalization
+- while (p < end) { } loop (interruptible)
+- process of the post-byte (wait for the )
+
+
+---
+
+Prog::PrefixAccel should distinguish between FAST-FAIL and NOT-FOUND-YET
