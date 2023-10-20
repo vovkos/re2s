@@ -403,6 +403,7 @@ class Prog {
 
  private:
   friend class Compiler;
+  friend class RE2::SM;
 
   DFA* GetDFA(MatchKind kind);
   void DeleteDFA(DFA* dfa);

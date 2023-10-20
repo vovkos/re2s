@@ -238,6 +238,9 @@ class RE2 {
   // Defined in set.h.
   class Set;
 
+  // SM stands for "Stream Matcher"; defined in sm.h.
+  class SM;
+
   enum ErrorCode {
     NoError = 0,
 

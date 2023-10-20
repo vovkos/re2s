@@ -115,6 +115,9 @@ bool RE2::Set::Compile() {
   re2::Regexp* re = re2::Regexp::Alternate(sub.data(), size_, pf);
 
   prog_.reset(Prog::CompileSet(re, anchor_, options_.max_mem()));
+
+  printf("prog: %s\n", prog_->Dump().c_str());
+
   re->Decref();
   return prog_ != nullptr;
 }

@@ -115,6 +115,7 @@ set(RE2_SOURCES
     re2/regexp.cc
     re2/set.cc
     re2/simplify.cc
+    re2/sm.cc
     re2/tostring.cc
     re2/unicode_casefold.cc
     re2/unicode_groups.cc
@@ -123,13 +124,15 @@ set(RE2_SOURCES
     )
 
 set(RE2_HEADERS
+    re2/dfa.h
     re2/filtered_re2.h
     re2/re2.h
     re2/set.h
+    re2/sm.h
     re2/stringpiece.h
     )
 
-add_library(re2 ${RE2_SOURCES})
+add_library(re2 ${RE2_SOURCES} ${RE2_HEADERS})
 target_compile_features(re2 PUBLIC cxx_std_14)
 target_include_directories(re2 PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 # CMake gives "set_target_properties called with incorrect number of arguments."
@@ -261,3 +264,5 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/re2.pc.in
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/re2.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+add_subdirectory(playtest)
