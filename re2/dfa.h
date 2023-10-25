@@ -17,7 +17,7 @@
 
 namespace re2 {
 
-  // A DFA implementation of a regular expression program.
+// A DFA implementation of a regular expression program.
 // Since this is entirely a forward declaration mandated by C++,
 // some of the comments here are better understood after reading
 // the comments in the sections that follow the DFA definition.
@@ -340,6 +340,65 @@ class DFA::RWLocker {
 
   RWLocker(const RWLocker&) = delete;
   RWLocker& operator=(const RWLocker&) = delete;
+};
+
+// Work queues
+
+// Internally, the DFA uses a sparse array of
+// program instruction pointers as a work queue.
+// In leftmost longest mode, marks separate sections
+// of workq that started executing at different
+// locations in the string (earlier locations first).
+class DFA::Workq : public SparseSet {
+ public:
+  // Constructor: n is number of normal slots, maxmark number of mark slots.
+  Workq(int n, int maxmark) :
+    SparseSet(n+maxmark),
+    n_(n),
+    maxmark_(maxmark),
+    nextmark_(n),
+    last_was_mark_(true) {
+  }
+
+  bool is_mark(int i) { return i >= n_; }
+
+  int maxmark() { return maxmark_; }
+
+  void clear() {
+    SparseSet::clear();
+    nextmark_ = n_;
+  }
+
+  void mark() {
+    if (last_was_mark_)
+      return;
+    last_was_mark_ = false;
+    SparseSet::insert_new(nextmark_++);
+  }
+
+  int size() {
+    return n_ + maxmark_;
+  }
+
+  void insert(int id) {
+    if (contains(id))
+      return;
+    insert_new(id);
+  }
+
+  void insert_new(int id) {
+    last_was_mark_ = false;
+    SparseSet::insert_new(id);
+  }
+
+ private:
+  int n_;                // size excluding marks
+  int maxmark_;          // maximum number of marks
+  int nextmark_;         // id of next mark
+  bool last_was_mark_;   // last inserted was mark
+
+  Workq(const Workq&) = delete;
+  Workq& operator=(const Workq&) = delete;
 };
 
 // Typically, a couple States do need to be preserved across a cache
