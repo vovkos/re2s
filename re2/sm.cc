@@ -10,7 +10,7 @@
 namespace re2 {
 
 enum {
-  ExtraDebug = true,
+  ExtraDebug = false,
 };
 
 RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code);
@@ -24,6 +24,10 @@ RE2::SM::~SM() {
 }
 
 void RE2::SM::init(absl::string_view pattern, const Options& options) {
+  prog_ = NULL;
+  rprog_ = NULL;
+  error_code_ = NoError;
+
   RegexpStatus status;
   regexp_ = Regexp::Parse(
     pattern,
@@ -52,7 +56,6 @@ void RE2::SM::init(absl::string_view pattern, const Options& options) {
     return;
   }
 
-  error_code_ = NoError;
   options_.Copy(options);
 }
 
@@ -183,8 +186,10 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
   if (!select_dfa_start_state(&select_start_params))
     return kErrorOutOfMemory;
 
-  if (prev_offset >= state->match_end_offset_) // overshoot
-      return kContinueBackward;
+  if (prev_offset >= state->match_end_offset_) { // overshoot
+    state->offset_ = prev_offset;
+    return kContinueBackward;
+  }
 
   size_t prefix_size = state->match_end_offset_ - prev_offset;
   assert(prefix_size <= chunk.size() && "inconsistent match end offset");
@@ -490,7 +495,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     } else {
       assert(ns == FullMatchState); // matches all the way to the end
       if (reverse) {
-        state->match_start_offset_ = state->base_offset_;
+        state->match_start_offset_ = state->offset_;
         state->flags_ |= State::kMatch;
         return kMatch;
       } else {
@@ -504,7 +509,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
   if (ns->IsMatch()) {
     if (reverse) {
-      state->match_start_offset_ = state->base_offset_;
+      state->match_start_offset_ = state->offset_;
       state->flags_ |= State::kMatch;
       return kMatch;
     } else {

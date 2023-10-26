@@ -11,11 +11,7 @@ int main() {
 	printf("main\n");
 
 	re2::RE2::Options options;
-	options.set_posix_syntax(true);
 	options.set_longest_match(true);
-	options.set_perl_classes(true);
-	options.set_word_boundary(true);
-	options.set_one_line(false);
 
 /*
 	const char* patterns[] = {
@@ -45,8 +41,8 @@ int main() {
 	for (size_t i = 0; i < count; i++)
 		printf("matched: %d\n", v[i]); */
 
-	const char pattern[] = "(^abc)";
-	const char text[] = "\nabc\n";
+	const char pattern[] = "(?m)(abc\\z)";
+	const char text[] = "\nabc fdfd\nabc";
 	size_t length = sizeof(text) - 1;
 
 	do {
