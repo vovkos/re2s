@@ -81,6 +81,7 @@ class DFA {
 
     int* inst_;         // Instruction pointers in the state.
     int ninst_;         // # of inst_ pointers.
+    int match_id;       // only for matching DFA states (INT_MAX otherwise)
     uint32_t flag_;     // Empty string bitfield flags in effect on the way
                         // into this state, along with kFlagMatch if this
                         // is a matching state.
@@ -279,6 +280,7 @@ class DFA {
   Prog* prog_;              // The regular expression program to run.
   Prog::MatchKind kind_;    // The kind of DFA.
   bool init_failed_;        // initialization failed (out of memory)
+  bool want_match_id_;      // fill State::match_id
 
   absl::Mutex mutex_;  // mutex_ >= cache_mutex_.r
 

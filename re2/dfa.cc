@@ -119,6 +119,7 @@ DFA::DFA(Prog* prog, Prog::MatchKind kind, int64_t max_mem)
   q0_ = new Workq(prog_->size(), nmark);
   q1_ = new Workq(prog_->size(), nmark);
   stack_ = PODArray<int>(nstack);
+  want_match_id_ = false;
 }
 
 DFA::~DFA() {
@@ -434,6 +435,7 @@ DFA::State* DFA::CachedState(int* inst, int ninst, uint32_t flag) {
   memmove(s->inst_, inst, instmem);
   s->ninst_ = ninst;
   s->flag_ = flag;
+  s->match_id = INT_MAX;
   if (ExtraDebug)
     absl::FPrintF(stderr, " -> %s\n", DumpState(s));
 
@@ -743,10 +745,23 @@ DFA::State* DFA::RunStateOnByte(State* state, int c) {
   if (isword)
     flag |= kFlagLastWord;
 
-  if (ismatch && kind_ == Prog::kManyMatch)
-    ns = WorkqToCachedState(q0_, q1_, flag);
-  else
+  if (!ismatch)
     ns = WorkqToCachedState(q0_, NULL, flag);
+  else {
+    ns = WorkqToCachedState(q0_, kind_ == Prog::kManyMatch ? q1_ : NULL, flag);
+
+    if (want_match_id_) {
+      int match_id = INT_MAX;
+      for (Workq::iterator i = q1_->begin(); i != q1_->end(); ++i) {
+        int id = *i;
+        Prog::Inst* ip = prog_->inst(id);
+        if (ip->opcode() == kInstMatch && ip->match_id() < match_id)
+          match_id = ip->match_id();
+      }
+
+      ns->match_id = match_id;
+    }
+  }
 
   // Flush ns before linking to it.
   // Write barrier before updating state->next_ so that the

@@ -159,6 +159,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
     } else { // main forward scan loop
       Prog::MatchKind kind = options_.longest_match() ? Prog::kLongestMatch : Prog::kFirstMatch;
       state->dfa_ = prog_->GetDFA(kind);
+      state->dfa_->want_match_id_ = true;
 
       DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
       SelectDfaStartStateParams select_start_params(state, &cache_lock);
@@ -322,12 +323,15 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   const uint8_t* end = ep;
   const uint8_t* lastmatch = NULL;  // most recent matching position in text
   const uint8_t* bytemap = prog->bytemap();
+  int lastmatch_id;
 
   if (reverse)
     std::swap(p, end);
 
-  if (s->IsMatch())
+  if (s->IsMatch()) {
     lastmatch = p;
+    lastmatch_id = s->match_id;
+  }
 
   while (p != end) {
     if (can_prefix_accel && s == start) {
@@ -383,6 +387,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
             state->match_end_offset_ = state->offset_ + (lastmatch - bp) - 1;
             state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
             state->match_next_char_ = *lastmatch;
+            state->match_id_ = lastmatch_id;
           } else if (state->match_end_offset_ == -1) {
             state->flags_ |= State::kMismatch;
             return kMismatch;
@@ -418,8 +423,10 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     }
 
     s = ns;
-    if (s->IsMatch())
+    if (s->IsMatch()) {
       lastmatch = p;
+      lastmatch_id = s->match_id;
+    }
   }
 
   if (lastmatch) // the DFA notices the match one byte late
@@ -429,6 +436,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       state->match_end_offset_ = state->offset_ + (lastmatch - bp) - 1;
       state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
       state->match_next_char_ = *lastmatch;
+      state->match_id_ = lastmatch_id;
     }
 
   state->dfa_state_ = s;
@@ -516,6 +524,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       state->match_end_offset_ = state->offset_;
       state->match_end_char_ = bp < ep ? ep[-1] : state->last_char_;
       state->match_next_char_ = state->eof_char_;
+      state->match_id_ = ns->match_id;
       return kContinueBackward;
     }
   }

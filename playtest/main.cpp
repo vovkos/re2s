@@ -13,36 +13,37 @@ int main() {
 	re2::RE2::Options options;
 	options.set_longest_match(true);
 
-/*
-	const char* patterns[] = {
-		"a?b+c*",
-		"i*n+t?",
-		"[a-z]+"
-	};
+	do {
+		const char* patterns[] = {
+			"a?b+c*",
+			"i*n+t?",
+			"[a-z]+"
+		};
 
-	RE2::Set set(options, re2::RE2::UNANCHORED);
-	std::string error;
+		RE2::Set set(options, re2::RE2::UNANCHORED);
+		std::string error;
 
-	for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
-		int k = set.Add(patterns[i], &error);
-		printf("%s -> %d\n", patterns[i], k);
-	}
+		for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+			int k = set.Add(patterns[i], &error);
+			printf("%s -> %d\n", patterns[i], k);
+		}
 
-	bool result = set.Compile();
-	assert(result);
+		bool result = set.Compile();
+		assert(result);
 
-	const char* text = "abc";
+		const char* text = "abc";
 
-	std::vector<int> v;
-	result = set.Match(text, &v);
-	assert(result);
+		std::vector<int> v;
+		result = set.Match(text, &v);
+		assert(result);
 
-	size_t count = v.size();
-	for (size_t i = 0; i < count; i++)
-		printf("matched: %d\n", v[i]); */
+		size_t count = v.size();
+		for (size_t i = 0; i < count; i++)
+			printf("matched: %d\n", v[i]);
+	} while (0);
 
-	const char pattern[] = "(?m)(abc\\z)";
-	const char text[] = "\nabc fdfd\nabc";
+	const char pattern[] = "(?mi)^abc|^def";
+	const char text[] = "  \nABC  \nDEF  ";
 	size_t length = sizeof(text) - 1;
 
 	do {
@@ -69,7 +70,8 @@ int main() {
 			printf("not found\n");
 		else
 			printf(
-				"match at %zd:%zd '%s'\n",
+				"match id: %d at %zd:%zd '%s'\n",
+				state.match_id(),
 				state.match_start_offset(),
 				state.match_end_offset(),
 				std::string(text + state.match_start_offset(), state.match_length()).c_str()
@@ -99,7 +101,8 @@ int main() {
 
 			case re2::RE2::SM::kMatch:
 				printf(
-					"forward-match at %zd:%zd '%s'\n",
+					"fmatch id: %d at %zd:%zd '%s'\n",
+					state.match_id(),
 					state.match_start_offset(),
 					state.match_end_offset(),
 					std::string(text + state.match_start_offset(), state.match_length()).c_str()
@@ -120,7 +123,8 @@ int main() {
 
 					case re2::RE2::SM::kMatch:
 						printf(
-							"reverse-match at %zd:%zd '%s'\n",
+							"rmatch id: %d at %zd:%zd '%s'\n",
+							state.match_id(),
 							state.match_start_offset(),
 							state.match_end_offset(),
 							std::string(text + state.match_start_offset(), state.match_length()).c_str()
