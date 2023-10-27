@@ -116,8 +116,6 @@ bool RE2::Set::Compile() {
 
   prog_.reset(Prog::CompileSet(re, anchor_, options_.max_mem()));
 
-  printf("prog: %s\n", prog_->Dump().c_str());
-
   re->Decref();
   return prog_ != nullptr;
 }

@@ -10,53 +10,186 @@
 namespace re2 {
 
 enum {
-  ExtraDebug = false,
+  ExtraDebug = true,
 };
 
 RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code);
 
-RE2::SM::~SM() {
-  if (regexp_)
-    regexp_->Decref();
-
-  delete prog_;
-  delete rprog_;
+RE2::SM::Module::Module() {
+  prog_ = NULL;
+  regexp_ = NULL;
 }
 
-void RE2::SM::init(absl::string_view pattern, const Options& options) {
+void RE2::SM::Module::clear() {
+  if (regexp_) {
+    regexp_->Decref();
+    regexp_ = NULL;
+  }
+
+  delete prog_;
   prog_ = NULL;
+  pattern_.clear();
+}
+
+void RE2::SM::clear() {
+  main_module_.clear();
+  delete rprog_;
   rprog_ = NULL;
   error_code_ = NoError;
+  error_.clear();
+  error_arg_.clear();
+  options_ = RE2::DefaultOptions;
+  anchor_ = RE2::UNANCHORED;
 
+  for (intptr_t i = switch_case_array_.size() - 1; i >= 0; i--)
+    delete switch_case_array_[i];
+
+  switch_case_array_.clear();
+}
+
+void RE2::SM::init() {
+  rprog_ = NULL;
+  error_code_ = NoError;
+  anchor_ = RE2::UNANCHORED;
+}
+
+bool RE2::SM::parse_module(Module* module, absl::string_view pattern)  {
   RegexpStatus status;
-  regexp_ = Regexp::Parse(
+  module->regexp_ = Regexp::Parse(
     pattern,
-    static_cast<Regexp::ParseFlags>(options.ParseFlags()),
+    static_cast<Regexp::ParseFlags>(options_.ParseFlags()),
     &status
   );
 
-  if (!regexp_) {
-    if (options.log_errors())
+  if (!module->regexp_) {
+    if (options_.log_errors())
       LOG(ERROR) << "Error parsing '" << pattern << "': " << status.Text();
 
     error_ = status.Text();
     error_code_ = RegexpErrorToRE2(status.code());
     error_arg_ = std::string(status.error_arg());
-    return;
+    return false;
   }
 
-  prog_ = regexp_->CompileToProg(options.max_mem() * 2 / 3);
-  rprog_ = regexp_->CompileToReverseProg(options.max_mem() / 3);
-  if (!prog_ || !rprog_) {
-    if (options.log_errors())
-      LOG(ERROR) << "Error compiling '" << pattern << "'";
+  module->pattern_ = std::string(pattern);
+  return true;
+}
+
+bool RE2::SM::compile_prog(Module* module) {
+  module->prog_ = module->regexp_->CompileToProg(options_.max_mem() * 2 / 3);
+  if (!module->prog_) {
+    if (options_.log_errors())
+      LOG(ERROR) << "Error compiling forward prog for '" << module->pattern_ << "'";
 
     error_code_ = RE2::ErrorPatternTooLarge;
-    error_ = "pattern too large - compile failed";
-    return;
+    error_ = "pattern too large - compile forward prog failed";
+    return false;
   }
 
-  options_.Copy(options);
+  return true;
+}
+
+bool RE2::SM::compile_rprog() {
+  rprog_ = main_module_.regexp_->CompileToReverseProg(options_.max_mem() / 3);
+  if (!rprog_) {
+    if (options_.log_errors())
+      LOG(ERROR) << "Error compiling reverse prog for '" << main_module_.pattern_ << "'";
+
+    error_code_ = RE2::ErrorPatternTooLarge;
+    error_ = "pattern too large - compile reverse prog failed";
+    return false;
+  }
+
+  return true;
+}
+
+re2::Regexp* RE2::SM::append_regexp_match_id(re2::Regexp* regexp, int match_id) {
+  re2::Regexp::ParseFlags flags = static_cast<re2::Regexp::ParseFlags>(options_.ParseFlags());
+  re2::Regexp* match = re2::Regexp::HaveMatch(match_id, flags);
+
+  if (regexp->op() != kRegexpConcat) {
+    re2::Regexp* sub[2];
+    sub[0] = regexp;
+    sub[1] = match;
+    regexp = re2::Regexp::Concat(sub, 2, flags);
+  } else {
+    int nsub = regexp->nsub();
+    PODArray<re2::Regexp*> sub(nsub + 1);
+    for (int i = 0; i < nsub; i++)
+      sub[i] = regexp->sub()[i]->Incref();
+    sub[nsub] = match;
+    regexp->Decref();
+    regexp = re2::Regexp::Concat(sub.data(), nsub + 1, flags);
+  }
+
+  return regexp;
+}
+
+bool RE2::SM::create(absl::string_view pattern, const Options& options, RE2::Anchor anchor) {
+  clear();
+
+  kind_ = kSingleRegexp;
+  options_ = options;
+  anchor_ = anchor;
+
+  return
+    parse_module(&main_module_, pattern) &&
+    compile_prog(&main_module_) &&
+    compile_rprog();
+}
+
+void RE2::SM::create_switch(const Options& options, RE2::Anchor anchor) {
+  clear();
+
+  kind_ = kRegexpSwitch;
+  options_ = options;
+  anchor_ = anchor;
+}
+
+int RE2::SM::add_switch_case(absl::string_view pattern) {
+  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+
+  std::unique_ptr<Module> module = std::make_unique<Module>();
+  bool result =
+    parse_module(module.get(), pattern) &&
+    compile_prog(module.get());
+  if (!result)
+    return -1;
+
+  int match_id = (int)switch_case_array_.size();
+  module->regexp_ = append_regexp_match_id(module->regexp_, match_id);
+  switch_case_array_.push_back(module.release());
+  return match_id;
+}
+
+bool RE2::SM::finalize_switch() {
+  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+  assert(
+    main_module_.regexp_ == NULL &&
+    main_module_.prog_ == NULL &&
+    rprog_ == NULL &&
+    "invalid RE2::SM use (already finalized)"
+  );
+
+  std::sort(
+    switch_case_array_.begin(),
+    switch_case_array_.end(),
+    [](const Module* m1, const Module* m2) -> bool {
+      return m1->pattern_ < m2->pattern_;
+    }
+  );
+
+  int count = static_cast<int>(switch_case_array_.size());
+  PODArray<re2::Regexp*> sub(count);
+  for (int i = 0; i < count; i++)
+    sub[i] = switch_case_array_[i]->regexp_;
+
+  Regexp::ParseFlags flags = static_cast<Regexp::ParseFlags>(options_.ParseFlags());
+  main_module_.regexp_ = re2::Regexp::Alternate(sub.data(), count, flags);
+
+  return
+    compile_prog(&main_module_) &&
+    compile_rprog();
 }
 
 struct RE2::SM::DfaBaseParams {
@@ -112,6 +245,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
 
   // forward scan
 
+  Prog* prog = main_module_.prog_;
   uint64_t prev_offset = state->offset_;
 
   if (
@@ -135,7 +269,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
     if (exec_result != kContinueBackward)
       return exec_result;
   } else {
-    if (prog_->anchor_start()) {
+    if (prog->anchor_start() || anchor_) {
       if (state->base_offset() != 0) { // mismatch on the start anchor
         state->flags_ |= State::kMismatch;
         return kMismatch;
@@ -144,7 +278,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
       state->flags_ |= State::kAnchored;
     }
 
-    if (prog_->anchor_end()) { // can skip forward scan and start from eof
+    if (prog->anchor_end() || anchor_ == RE2::ANCHOR_BOTH) { // can skip forward scan and start from eof
       state->offset_ += chunk.length();
       if (state->offset_ < state->eof_offset_) {
         state->flags_ |= State::kInitialized | State::kFullMatch;
@@ -158,7 +292,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
       state->match_next_char_ = state->eof_char_;
     } else { // main forward scan loop
       Prog::MatchKind kind = options_.longest_match() ? Prog::kLongestMatch : Prog::kFirstMatch;
-      state->dfa_ = prog_->GetDFA(kind);
+      state->dfa_ = prog->GetDFA(kind);
       state->dfa_->want_match_id_ = true;
 
       DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);

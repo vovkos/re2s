@@ -12,8 +12,9 @@ int main() {
 
 	re2::RE2::Options options;
 	options.set_longest_match(true);
+	options.set_case_sensitive(false);
 
-	do {
+	/* do {
 		const char* patterns[] = {
 			"a?b+c*",
 			"i*n+t?",
@@ -40,10 +41,10 @@ int main() {
 		size_t count = v.size();
 		for (size_t i = 0; i < count; i++)
 			printf("matched: %d\n", v[i]);
-	} while (0);
+	} while (0); */
 
-	const char pattern[] = "(?mi)^abc|^def";
-	const char text[] = "  \nABC  \nDEF  ";
+	const char pattern[] = "(?m)(abc|def|ghi)";
+	const char text[] = "  ghi   def   abc ";
 	size_t length = sizeof(text) - 1;
 
 	do {
@@ -61,12 +62,22 @@ int main() {
 	do {
 		printf("using re2::RE2::SM (full text)...\n");
 
-		re2::RE2::SM sm(pattern, options);
+		re2::RE2::SM sm("ghi", options);
+		sm.create_switch(options);
+		sm.add_switch_case("abc");
+		sm.add_switch_case("def");
+		sm.add_switch_case("ghi");
+		bool result = sm.finalize_switch();
+		if (!result) {
+			printf("error: %s\n", sm.error().c_str());
+			return -1;
+		}
+
 		re2::RE2::SM::State state;
 		state.set_eof(length);
 
-		re2::RE2::SM::ExecResult result = sm.exec(&state, text);
-		if (result != re2::RE2::SM::kMatch)
+		re2::RE2::SM::ExecResult exec_result = sm.exec(&state, text);
+		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
 		else
 			printf(
@@ -81,7 +92,18 @@ int main() {
 	do {
 		printf("using re2::RE2::SM (char-by-char)...\n");
 
-		re2::RE2::SM sm(pattern, options);
+		re2::RE2::SM sm;
+		sm.create_switch(options);
+		sm.add_switch_case("abc");
+		sm.add_switch_case("def");
+		sm.add_switch_case("ghi");
+		bool result = sm.finalize_switch();
+		if (!result) {
+			printf("error: %s\n", sm.error().c_str());
+			return -1;
+		}
+
+
 		re2::RE2::SM::State state;
 		state.set_eof(length);
 

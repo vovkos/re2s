@@ -6,8 +6,7 @@
 #define RE2_SM_H_
 
 #include <string>
-#include <utility>
-#include <vector>
+#include <list>
 
 #include "absl/strings/string_view.h"
 #include "re2/re2.h"
@@ -20,6 +19,40 @@ class DFA;
 class RWLocker;
 
 class RE2::SM {
+ private:
+  struct DfaBaseParams;
+  struct SelectDfaStartStateParams;
+  struct DfaLoopParams;
+
+ public:
+  struct Module {
+    Module();
+    ~Module() {
+      clear();
+    }
+
+    const std::string& pattern() const {
+      return pattern_;
+    }
+
+    re2::Regexp* regexp() const {
+      return regexp_;
+    }
+
+    Prog* prog() const {
+      return prog_;
+    }
+
+    void clear();
+
+    private:
+     std::string pattern_;
+     re2::Regexp* regexp_;
+     Prog* prog_;
+
+     friend class RE2::SM;
+  };
+
  public:
   class State;
 
@@ -32,42 +65,96 @@ class RE2::SM {
 	  kMatch,                  // match end & start found
   };
 
+  enum Kind {
+    kSingleRegexp,
+    kRegexpSwitch,
+  };
+
  public:
-  explicit SM(const char* pattern) {
-    init(pattern, RE2::DefaultOptions);
+  SM() {
+    init();
   }
-  explicit SM(const std::string& pattern) {
-    init(pattern, RE2::DefaultOptions);
+
+  SM(absl::string_view pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED) {
+    init(), create(pattern, options, anchor);
   }
-  explicit SM(absl::string_view pattern) {
-    init(pattern, RE2::DefaultOptions);
+
+  ~SM() {
+    clear();
   }
-  SM(absl::string_view pattern, const Options& options) {
-    init(pattern, options);
-  }
-  ~SM();
+
+  // not copyable or movable
+
+  SM(const SM&) = delete;
+  SM& operator=(const SM&) = delete;
+  SM(SM&&) = delete;
+  SM& operator=(SM&&) = delete;
+
+  // properties
 
   bool ok() const {
     return error_code_ == NoError;
   }
+
   ErrorCode error_code() const {
     return error_code_;
   }
+
   const std::string& error() const {
     return error_;
   }
+
   const std::string& error_arg() const {
     return error_arg_;
   }
 
+  void clear();
+
+  Kind kind() const {
+    return kind_;
+  }
+
+  const Options& options() const {
+    return options_;
+  }
+
+  RE2::Anchor anchor() const {
+    return anchor_;
+  }
+
+  // kSingleRegexp
+
+  const std::string& pattern() const {
+    return main_module_.pattern();
+  }
+
+  bool create(absl::string_view pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
+
+  // kRegexpSwitch
+
+  size_t switch_case_count() {
+    assert(kind_ == kRegexpSwitch);
+    return switch_case_array_.size();
+  }
+
+  const Module* switch_case(size_t i) const {
+    return switch_case_array_[i];
+  }
+
+  void create_switch(const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
+  int add_switch_case(absl::string_view pattern);
+  bool finalize_switch();
+
+  // main entry point
+
   ExecResult exec(State* state, absl::string_view chunk) const;
 
  private:
-  void init(absl::string_view pattern, const Options& options);
-
-  struct DfaBaseParams;
-  struct SelectDfaStartStateParams;
-  struct DfaLoopParams;
+  void init();
+  bool parse_module(Module* module, absl::string_view pattern);
+  bool compile_prog(Module* module);
+  bool compile_rprog();
+  re2::Regexp* append_regexp_match_id(re2::Regexp* regexp, int match_id);
 
   static bool select_dfa_start_state(SelectDfaStartStateParams* params);
   static bool select_dfa_start_state_impl(SelectDfaStartStateParams* params);
@@ -88,9 +175,11 @@ class RE2::SM {
 
  private:
   Options options_;
-  re2::Regexp* regexp_;
-  re2::Prog* prog_;
-  re2::Prog* rprog_;
+  RE2::Anchor anchor_;
+  Kind kind_;
+  std::vector<Module*> switch_case_array_;
+  Module main_module_;
+  Prog* rprog_;
   std::string error_;
   std::string error_arg_;
   ErrorCode error_code_;
@@ -147,7 +236,7 @@ class RE2::SM::State {
   uint64_t match_length() const {
     return match_end_offset_ - match_start_offset_;
   }
-  uint32_t match_id() const {
+  int match_id() const {
     return match_id_;
   }
 
@@ -177,8 +266,8 @@ class RE2::SM::State {
   uint64_t eof_offset_;
   uint64_t match_start_offset_;
   uint64_t match_end_offset_;
-  uint32_t match_id_;
-  uint32_t flags_;
+  int match_id_;
+  int flags_;
   int base_char_;
   int eof_char_;
   int match_end_char_;
