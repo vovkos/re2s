@@ -8,7 +8,7 @@
 #include "absl/container/flat_hash_set.h"
 
 #include "re2/re2.h"
-#include "re2/Prog.h"
+#include "re2/prog.h"
 
 // Silence "zero-sized array in struct/union" warning for DFA::State::next_.
 #ifdef _MSC_VER

@@ -14,35 +14,6 @@ int main() {
 	options.set_longest_match(true);
 	options.set_case_sensitive(false);
 
-	/* do {
-		const char* patterns[] = {
-			"a?b+c*",
-			"i*n+t?",
-			"[a-z]+"
-		};
-
-		RE2::Set set(options, re2::RE2::UNANCHORED);
-		std::string error;
-
-		for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
-			int k = set.Add(patterns[i], &error);
-			printf("%s -> %d\n", patterns[i], k);
-		}
-
-		bool result = set.Compile();
-		assert(result);
-
-		const char* text = "abc";
-
-		std::vector<int> v;
-		result = set.Match(text, &v);
-		assert(result);
-
-		size_t count = v.size();
-		for (size_t i = 0; i < count; i++)
-			printf("matched: %d\n", v[i]);
-	} while (0); */
-
 	const char pattern[] = "(?m)(abc|def|ghi)";
 	const char text[] = "  ghi   def   abc ";
 	size_t length = sizeof(text) - 1;
@@ -62,13 +33,13 @@ int main() {
 	do {
 		printf("using re2::RE2::SM (full text)...\n");
 
-		re2::RE2::SM sm("ghi", options);
+		re2::RE2::SM sm;
 		sm.create_switch(options);
 		sm.add_switch_case("abc");
 		sm.add_switch_case("def");
 		sm.add_switch_case("ghi");
-		bool result = sm.finalize_switch();
-		if (!result) {
+  	bool result = sm.finalize_switch();
+    if (!result) {
 			printf("error: %s\n", sm.error().c_str());
 			return -1;
 		}
@@ -102,7 +73,6 @@ int main() {
 			printf("error: %s\n", sm.error().c_str());
 			return -1;
 		}
-
 
 		re2::RE2::SM::State state;
 		state.set_eof(length);

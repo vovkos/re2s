@@ -26,17 +26,17 @@ class RE2::SM {
 
  public:
   struct Module {
-    Module();
+    Module(int match_id = 0);
     ~Module() {
       clear();
     }
 
-    const std::string& pattern() const {
-      return pattern_;
+    int match_id() const {
+      return match_id_;
     }
 
-    re2::Regexp* regexp() const {
-      return regexp_;
+    const std::string& pattern() const {
+      return pattern_;
     }
 
     Prog* prog() const {
@@ -45,12 +45,13 @@ class RE2::SM {
 
     void clear();
 
-    private:
-     std::string pattern_;
-     re2::Regexp* regexp_;
-     Prog* prog_;
+   private:
+    std::string pattern_;
+    re2::Regexp* regexp_;
+    Prog* prog_;
+	  int match_id_;
 
-     friend class RE2::SM;
+    friend class RE2::SM;
   };
 
  public:

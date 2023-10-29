@@ -10,14 +10,15 @@
 namespace re2 {
 
 enum {
-  ExtraDebug = true,
+  ExtraDebug = false,
 };
 
 RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code);
 
-RE2::SM::Module::Module() {
+RE2::SM::Module::Module(int match_id) {
   prog_ = NULL;
   regexp_ = NULL;
+  match_id_ = match_id;
 }
 
 void RE2::SM::Module::clear() {
@@ -149,15 +150,15 @@ void RE2::SM::create_switch(const Options& options, RE2::Anchor anchor) {
 int RE2::SM::add_switch_case(absl::string_view pattern) {
   assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
 
-  std::unique_ptr<Module> module = std::make_unique<Module>();
+  int match_id = (int)switch_case_array_.size();
+  std::unique_ptr<Module> module = std::make_unique<Module>(match_id);
   bool result =
     parse_module(module.get(), pattern) &&
     compile_prog(module.get());
+
   if (!result)
     return -1;
 
-  int match_id = (int)switch_case_array_.size();
-  module->regexp_ = append_regexp_match_id(module->regexp_, match_id);
   switch_case_array_.push_back(module.release());
   return match_id;
 }
@@ -171,25 +172,45 @@ bool RE2::SM::finalize_switch() {
     "invalid RE2::SM use (already finalized)"
   );
 
+  // sort to help Regex::Simpify()
+
+  std::vector<Module*> v = switch_case_array_;
+
   std::sort(
-    switch_case_array_.begin(),
-    switch_case_array_.end(),
+    v.begin(),
+    v.end(),
     [](const Module* m1, const Module* m2) -> bool {
       return m1->pattern_ < m2->pattern_;
     }
   );
 
+  Regexp::ParseFlags flags = static_cast<Regexp::ParseFlags>(options_.ParseFlags());
+
   int count = static_cast<int>(switch_case_array_.size());
   PODArray<re2::Regexp*> sub(count);
   for (int i = 0; i < count; i++)
-    sub[i] = switch_case_array_[i]->regexp_;
+    sub[i] = v[i]->regexp_->Incref(); // will be Decref-ed by the parent Regexp
 
-  Regexp::ParseFlags flags = static_cast<Regexp::ParseFlags>(options_.ParseFlags());
+  re2::Regexp* prev_regexp = main_module_.regexp_;
   main_module_.regexp_ = re2::Regexp::Alternate(sub.data(), count, flags);
 
-  return
-    compile_prog(&main_module_) &&
-    compile_rprog();
+  bool result = compile_rprog();
+
+  main_module_.regexp_->Decref();
+  main_module_.regexp_ = NULL;
+
+  if (!result)
+    return false;
+
+  for (int i = 0; i < count; i++) {
+    Module* module = v[i];
+    module->regexp_ = append_regexp_match_id(module->regexp_, module->match_id_);
+    module->regexp_->Incref(); // will be Decref-ed by the parent Regexp
+    sub[i] = module->regexp_;
+  }
+
+  main_module_.regexp_ = re2::Regexp::Alternate(sub.data(), count, flags);
+  return compile_prog(&main_module_);
 }
 
 struct RE2::SM::DfaBaseParams {
