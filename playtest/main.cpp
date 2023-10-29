@@ -7,6 +7,25 @@
 #include "re2/sm.h"
 #include "re2/set.h"
 
+void print_re2_sm_submatches(const re2::RE2::SM& sm, int match_id, absl::string_view match) {
+	enum {
+		MaxSubmatchCount = 8
+	};
+
+
+	const re2::RE2::SM::Module* module = sm.kind() == re2::RE2::SM::kSingleRegexp ? sm.module() : sm.switch_case(match_id);
+	size_t capture_count = module->capture_count() + 1;
+	assert(capture_count < MaxSubmatchCount);
+
+	absl::string_view submatches[MaxSubmatchCount];
+	bool result = module->capture_submatches(match, submatches, capture_count);
+	if (!result)
+		printf("can't capture submatches\n");
+	else
+		for (size_t i = 0; i < capture_count; i++)
+			printf("  submatch[%zd]: '%s'\n", i, std::string(submatches[i]).c_str());
+}
+
 int main() {
 	printf("main\n");
 
@@ -14,9 +33,10 @@ int main() {
 	options.set_longest_match(true);
 	options.set_case_sensitive(false);
 
-	const char pattern[] = "(?m)(abc|def|ghi)";
-	const char text[] = "  ghi   def   abc ";
+	const char pattern[] = "(?m)(abc\\d+|def\\d+|ghi\\d+)";
+	const char text[] = "  ghi10   def11   abc12 ";
 	size_t length = sizeof(text) - 1;
+	std::string match;
 
 	do {
 		printf("using re2::RE2...\n");
@@ -31,13 +51,44 @@ int main() {
 	} while (0);
 
 	do {
-		printf("using re2::RE2::SM (full text)...\n");
+		printf("using re2::RE2::SM (single regexp, full text)...\n");
+
+		re2::RE2::SM sm;
+		bool result = sm.create("abc(\\d+)|def(\\d+)|ghi(\\d+)");
+    if (!result) {
+			printf("error: %s\n", sm.error().c_str());
+			return -1;
+		}
+
+		re2::RE2::SM::State state;
+		state.set_eof(length);
+
+		re2::RE2::SM::ExecResult exec_result = sm.exec(&state, text);
+		if (exec_result != re2::RE2::SM::kMatch)
+			printf("not found\n");
+		else {
+			match.assign(text + state.match_start_offset(), state.match_length());
+
+			printf(
+				"match id: %d at %zd:%zd '%s'\n",
+				state.match_id(),
+				state.match_start_offset(),
+				state.match_end_offset(),
+				match.c_str()
+			);
+
+			print_re2_sm_submatches(sm, state.match_id(), match);
+		}
+	} while (0);
+
+	do {
+		printf("using re2::RE2::SM (regexp switch, full text)...\n");
 
 		re2::RE2::SM sm;
 		sm.create_switch(options);
-		sm.add_switch_case("abc");
-		sm.add_switch_case("def");
-		sm.add_switch_case("ghi");
+		sm.add_switch_case("abc(\\d+)");
+		sm.add_switch_case("def(\\d+)");
+		sm.add_switch_case("ghi(\\d+)");
   	bool result = sm.finalize_switch();
     if (!result) {
 			printf("error: %s\n", sm.error().c_str());
@@ -50,24 +101,29 @@ int main() {
 		re2::RE2::SM::ExecResult exec_result = sm.exec(&state, text);
 		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
-		else
+		else {
+			match.assign(text + state.match_start_offset(), state.match_length());
+
 			printf(
 				"match id: %d at %zd:%zd '%s'\n",
 				state.match_id(),
 				state.match_start_offset(),
 				state.match_end_offset(),
-				std::string(text + state.match_start_offset(), state.match_length()).c_str()
+				match.c_str()
 			);
+
+			print_re2_sm_submatches(sm, state.match_id(), match);
+		}
 	} while (0);
 
 	do {
-		printf("using re2::RE2::SM (char-by-char)...\n");
+		printf("using re2::RE2::SM (regexp switch, char-by-char)...\n");
 
 		re2::RE2::SM sm;
 		sm.create_switch(options);
-		sm.add_switch_case("abc");
-		sm.add_switch_case("def");
-		sm.add_switch_case("ghi");
+		sm.add_switch_case("abc(\\d+)");
+		sm.add_switch_case("def(\\d+)");
+		sm.add_switch_case("ghi(\\d+)");
 		bool result = sm.finalize_switch();
 		if (!result) {
 			printf("error: %s\n", sm.error().c_str());
@@ -92,14 +148,16 @@ int main() {
 				return -1;
 
 			case re2::RE2::SM::kMatch:
+				match.assign(text + state.match_start_offset(), state.match_length());
 				printf(
 					"fmatch id: %d at %zd:%zd '%s'\n",
 					state.match_id(),
 					state.match_start_offset(),
 					state.match_end_offset(),
-					std::string(text + state.match_start_offset(), state.match_length()).c_str()
+					match.c_str()
 				);
 
+				print_re2_sm_submatches(sm, state.match_id(), match);
 				p = text + state.match_end_offset();
 				break; // keep searching forward
 
@@ -114,14 +172,16 @@ int main() {
 						break;
 
 					case re2::RE2::SM::kMatch:
+						match.assign(text + state.match_start_offset(), state.match_length());
 						printf(
 							"rmatch id: %d at %zd:%zd '%s'\n",
 							state.match_id(),
 							state.match_start_offset(),
 							state.match_end_offset(),
-							std::string(text + state.match_start_offset(), state.match_length()).c_str()
+							match.c_str()
 						);
 
+						print_re2_sm_submatches(sm, state.match_id(), match);
 						p = text; // break out of the parent while loop
 						break;
 

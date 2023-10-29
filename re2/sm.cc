@@ -32,6 +32,23 @@ void RE2::SM::Module::clear() {
   pattern_.clear();
 }
 
+bool RE2::SM::Module::capture_submatches(
+  absl::string_view match,
+  absl::string_view* submatches,
+  size_t nsubmatches
+) const {
+  if (nsubmatches > capture_count_ + 1)
+    nsubmatches = capture_count_ + 1;
+
+  bool can_one_pass = prog_->IsOnePass() && nsubmatches <= Prog::kMaxOnePassCapture;
+  bool can_bit_state = prog_->CanBitState() && match.size() <= prog_->bit_state_text_max_size();
+
+  return
+    can_one_pass ? prog_->SearchOnePass(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches) :
+    can_bit_state ? prog_->SearchBitState(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches) :
+    prog_->SearchNFA(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches);
+}
+
 void RE2::SM::clear() {
   main_module_.clear();
   delete rprog_;
@@ -58,7 +75,7 @@ bool RE2::SM::parse_module(Module* module, absl::string_view pattern)  {
   RegexpStatus status;
   module->regexp_ = Regexp::Parse(
     pattern,
-    static_cast<Regexp::ParseFlags>(options_.ParseFlags()),
+    (Regexp::ParseFlags)options_.ParseFlags(),
     &status
   );
 
@@ -72,6 +89,7 @@ bool RE2::SM::parse_module(Module* module, absl::string_view pattern)  {
     return false;
   }
 
+  module->capture_count_ = module->regexp_->NumCaptures();
   module->pattern_ = std::string(pattern);
   return true;
 }
@@ -105,7 +123,7 @@ bool RE2::SM::compile_rprog() {
 }
 
 re2::Regexp* RE2::SM::append_regexp_match_id(re2::Regexp* regexp, int match_id) {
-  re2::Regexp::ParseFlags flags = static_cast<re2::Regexp::ParseFlags>(options_.ParseFlags());
+  re2::Regexp::ParseFlags flags = (re2::Regexp::ParseFlags)options_.ParseFlags();
   re2::Regexp* match = re2::Regexp::HaveMatch(match_id, flags);
 
   if (regexp->op() != kRegexpConcat) {
@@ -184,9 +202,9 @@ bool RE2::SM::finalize_switch() {
     }
   );
 
-  Regexp::ParseFlags flags = static_cast<Regexp::ParseFlags>(options_.ParseFlags());
+  Regexp::ParseFlags flags = (Regexp::ParseFlags)options_.ParseFlags();
 
-  int count = static_cast<int>(switch_case_array_.size());
+  int count = (int)switch_case_array_.size();
   PODArray<re2::Regexp*> sub(count);
   for (int i = 0; i < count; i++)
     sub[i] = v[i]->regexp_->Incref(); // will be Decref-ed by the parent Regexp

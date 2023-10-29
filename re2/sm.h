@@ -43,12 +43,23 @@ class RE2::SM {
       return prog_;
     }
 
+    size_t capture_count() const {
+      return capture_count_;
+    }
+
     void clear();
+
+    bool capture_submatches(
+      absl::string_view match,
+      absl::string_view* submatches,
+      size_t nsubmatches
+    ) const;
 
    private:
     std::string pattern_;
     re2::Regexp* regexp_;
     Prog* prog_;
+    size_t capture_count_;
 	  int match_id_;
 
     friend class RE2::SM;
@@ -125,8 +136,16 @@ class RE2::SM {
 
   // kSingleRegexp
 
+  const Module* module() const {
+    return &main_module_;
+  }
+
   const std::string& pattern() const {
     return main_module_.pattern();
+  }
+
+  size_t capture_count() const {
+    return main_module_.capture_count();
   }
 
   bool create(absl::string_view pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
@@ -149,6 +168,14 @@ class RE2::SM {
   // main entry point
 
   ExecResult exec(State* state, absl::string_view chunk) const;
+
+  bool capture_submatches(
+    absl::string_view match,
+    absl::string_view* submatches,
+    size_t nsubmatches
+  ) const {
+    return main_module_.capture_submatches(match, submatches, nsubmatches);
+  }
 
  private:
   void init();
