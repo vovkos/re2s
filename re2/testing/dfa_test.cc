@@ -27,6 +27,21 @@ ABSL_FLAG(int, threads, 4, "number of threads");
 
 namespace re2 {
 
+TEST(OPT, Matching) {
+  RE2 re("(a*b)");
+  std::string s;
+  s.append(2, ' ');
+  s.append(32 * 1024 * 1024, 'a');
+  s.append(2, ' ');
+  s += 'b';
+
+  for (size_t i = 0; i < 32; i++) {
+    absl::string_view m;
+    bool result = RE2::PartialMatch(s, re, &m);
+    ASSERT_TRUE(result);
+  }
+}
+
 static int state_cache_resets = 0;
 static int search_failures = 0;
 

@@ -938,15 +938,13 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
 
   const uint8_t* bytemap = prog_->bytemap();
   const uint8_t* lastmatch = NULL;   // most recent matching position in text
-  bool matched = false;
 
   State* s = start;
   if (ExtraDebug)
     absl::FPrintF(stderr, "@stx: %s\n", DumpState(s));
 
   if (s->IsMatch()) {
-    matched = true;
-    lastmatch = p;
+    lastmatch = run_forward ? p + 1 : p - 1; // compensate so that we can avoid adjusting in a loop
     if (ExtraDebug)
       absl::FPrintF(stderr, "match @stx! [%s]\n", DumpState(s));
     if (params->matches != NULL && kind_ == Prog::kManyMatch) {
@@ -958,7 +956,7 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
       }
     }
     if (want_earliest_match) {
-      params->ep = reinterpret_cast<const char*>(lastmatch);
+      params->ep = reinterpret_cast<const char*>(p);
       return true;
     }
   }
@@ -1046,10 +1044,9 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
       }
     }
     if (ns <= SpecialStateMax) {
-      if (ns == DeadState) {
-        params->ep = reinterpret_cast<const char*>(lastmatch);
-        return matched;
-      }
+      if (ns == DeadState)
+        goto exit;
+
       // FullMatchState
       params->ep = reinterpret_cast<const char*>(ep);
       return true;
@@ -1057,15 +1054,9 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
 
     s = ns;
     if (s->IsMatch()) {
-      matched = true;
-      // The DFA notices the match one byte late,
-      // so adjust p before using it in the match.
-      if (run_forward)
-        lastmatch = p - 1;
-      else
-        lastmatch = p + 1;
+      lastmatch = p; // don't adjust in the loop
       if (ExtraDebug)
-        absl::FPrintF(stderr, "match @%d! [%s]\n", lastmatch - bp, DumpState(s));
+        absl::FPrintF(stderr, "match @%d! [%s]\n", (run_forward ? p - 1 : p + 1) - bp, DumpState(s));
       if (params->matches != NULL && kind_ == Prog::kManyMatch) {
         for (int i = s->ninst_ - 1; i >= 0; i--) {
           int id = s->inst_[i];
@@ -1074,10 +1065,8 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
           params->matches->insert(id);
         }
       }
-      if (want_earliest_match) {
-        params->ep = reinterpret_cast<const char*>(lastmatch);
-        return true;
-      }
+      if (want_earliest_match)
+        goto matched;
     }
   }
 
@@ -1118,10 +1107,9 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
     }
   }
   if (ns <= SpecialStateMax) {
-    if (ns == DeadState) {
-      params->ep = reinterpret_cast<const char*>(lastmatch);
-      return matched;
-    }
+    if (ns == DeadState)
+      goto exit;
+
     // FullMatchState
     params->ep = reinterpret_cast<const char*>(ep);
     return true;
@@ -1129,8 +1117,7 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
 
   s = ns;
   if (s->IsMatch()) {
-    matched = true;
-    lastmatch = p;
+    params->ep = reinterpret_cast<const char*>(ep);
     if (ExtraDebug)
       absl::FPrintF(stderr, "match @etx! [%s]\n", DumpState(s));
     if (params->matches != NULL && kind_ == Prog::kManyMatch) {
@@ -1141,10 +1128,19 @@ inline bool DFA::InlinedSearchLoop(SearchParams* params) {
         params->matches->insert(id);
       }
     }
+    return true;
   }
 
-  params->ep = reinterpret_cast<const char*>(lastmatch);
-  return matched;
+exit:
+  if (!lastmatch) {
+    params->ep = NULL;
+    return false;
+  }
+
+matched:
+  // DFA notices a match one byte late
+  params->ep = reinterpret_cast<const char*>(run_forward ? lastmatch - 1 : lastmatch + 1);
+  return true;
 }
 
 // Inline specializations of the general loop.
