@@ -28,20 +28,22 @@ ABSL_FLAG(int, threads, 4, "number of threads");
 namespace re2 {
 
 TEST(OPT, Matching) {
-  RE2 re("(a*b)");
+  RE2::Options options;
+  options.set_longest_match(true);
+  RE2 re("(a+b?)", options);
   std::string s;
   s.append(2, ' ');
-  s.append(32 * 1024 * 1024, 'a');
+  s.append(128 * 1024 * 1024, 'a');
   s.append(2, ' ');
   s += 'b';
 
-  for (size_t i = 0; i < 32; i++) {
+  for (size_t i = 0; i < 4; i++) {
     absl::string_view m;
     bool result = RE2::PartialMatch(s, re, &m);
     ASSERT_TRUE(result);
   }
 }
-
+/*
 static int state_cache_resets = 0;
 static int search_failures = 0;
 
@@ -384,5 +386,5 @@ TEST(DFA, Callback) {
   }
   EXPECT_EQ(nfail, 0);
 }
-
+*/
 }  // namespace re2

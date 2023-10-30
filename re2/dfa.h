@@ -15,6 +15,8 @@
 #pragma warning(disable: 4200)
 #endif
 
+#define _NEW_DFA_LOOP 1
+
 namespace re2 {
 
 // A DFA implementation of a regular expression program.
@@ -240,9 +242,38 @@ class DFA {
   bool AnalyzeSearchHelper(SearchParams* params, StartInfo* info,
                            uint32_t flags);
 
+#if (_NEW_DFA_LOOP)
   // The generic search loop, inlined to create specialized versions.
   // cache_mutex_.r <= L < mutex_
   // Might unlock and relock cache_mutex_ via params->cache_lock.
+  template <bool fill_matches,
+            bool can_prefix_accel,
+            bool want_earliest_match,
+            bool run_forward>
+  inline bool InlinedSearchLoop(SearchParams* params);
+
+  // The specialized versions of InlinedSearchLoop.  The three letters
+  // at the ends of the name denote the true/false values used as the
+  // last three parameters of InlinedSearchLoop.
+  // cache_mutex_.r <= L < mutex_
+  // Might unlock and relock cache_mutex_ via params->cache_lock.
+  bool SearchFFFF(SearchParams* params);
+  bool SearchFFFT(SearchParams* params);
+  bool SearchFFTF(SearchParams* params);
+  bool SearchFFTT(SearchParams* params);
+  bool SearchFTFF(SearchParams* params);
+  bool SearchFTFT(SearchParams* params);
+  bool SearchFTTF(SearchParams* params);
+  bool SearchFTTT(SearchParams* params);
+  bool SearchTFFF(SearchParams* params);
+  bool SearchTFFT(SearchParams* params);
+  bool SearchTFTF(SearchParams* params);
+  bool SearchTFTT(SearchParams* params);
+  bool SearchTTFF(SearchParams* params);
+  bool SearchTTFT(SearchParams* params);
+  bool SearchTTTF(SearchParams* params);
+  bool SearchTTTT(SearchParams* params);
+#else
   template <bool can_prefix_accel,
             bool want_earliest_match,
             bool run_forward>
@@ -261,7 +292,7 @@ class DFA {
   bool SearchTFT(SearchParams* params);
   bool SearchTTF(SearchParams* params);
   bool SearchTTT(SearchParams* params);
-
+#endif
   // The main search loop: calls an appropriate specialized version of
   // InlinedSearchLoop.
   // cache_mutex_.r <= L < mutex_
