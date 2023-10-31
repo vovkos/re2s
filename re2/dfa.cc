@@ -754,6 +754,9 @@ DFA::State* DFA::RunStateOnByte(State* state, int c) {
       int match_id = INT_MAX;
       for (Workq::iterator i = q1_->begin(); i != q1_->end(); ++i) {
         int id = *i;
+        if (q1_->is_mark(id))
+          continue;
+
         Prog::Inst* ip = prog_->inst(id);
         if (ip->opcode() == kInstMatch && ip->match_id() < match_id)
           match_id = ip->match_id();
