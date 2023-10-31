@@ -33,15 +33,21 @@ int main() {
 	options.set_longest_match(true);
 	options.set_case_sensitive(false);
 
-	const char pattern[] = "(?m)(abc\\d+|def\\d+|ghi\\d+)";
-	const char text[] = "  ghi10   def11   abc12 ";
+	const char single_pattern[] = "(?m)(^abc$)";
+	const char* switch_patterns[] = {
+		"(?m)(^abc$)",
+		"(?m)(^def$)",
+		"(?m)(^ghi$)",
+	};
+
+	const char text[] = " \nghi\n \ndef\n \nabc\n ";
 	size_t length = sizeof(text) - 1;
 	std::string match;
 
 	do {
 		printf("using re2::RE2...\n");
 
-		re2::RE2 re(pattern, options);
+		re2::RE2 re(single_pattern, options);
 		absl::string_view match;
 		bool result = re.RE2::PartialMatch(text, re, &match);
 		if (!result)
@@ -54,7 +60,7 @@ int main() {
 		printf("using re2::RE2::SM (single regexp, full text)...\n");
 
 		re2::RE2::SM sm;
-		bool result = sm.create("abc(\\d+)|def(\\d+)|ghi(\\d+)");
+		bool result = sm.create(single_pattern, options);
     if (!result) {
 			printf("error: %s\n", sm.error().c_str());
 			return -1;
@@ -70,7 +76,7 @@ int main() {
 			match.assign(text + state.match_start_offset(), state.match_length());
 
 			printf(
-				"match id: %d at %zd:%zd '%s'\n",
+				"match id: %d at %zd:%zd '%s', \n",
 				state.match_id(),
 				state.match_start_offset(),
 				state.match_end_offset(),
@@ -86,10 +92,9 @@ int main() {
 
 		re2::RE2::SM sm;
 		sm.create_switch(options);
-		sm.add_switch_case("abc(\\d+)");
-		sm.add_switch_case("def(\\d+)");
-		sm.add_switch_case("ghi(\\d+)");
-  	bool result = sm.finalize_switch();
+		for (size_t i = 0; i < sizeof(switch_patterns) / sizeof(switch_patterns[0]); i++)
+			sm.add_switch_case(switch_patterns[i]);
+		bool result = sm.finalize_switch();
     if (!result) {
 			printf("error: %s\n", sm.error().c_str());
 			return -1;
@@ -121,9 +126,8 @@ int main() {
 
 		re2::RE2::SM sm;
 		sm.create_switch(options);
-		sm.add_switch_case("abc(\\d+)");
-		sm.add_switch_case("def(\\d+)");
-		sm.add_switch_case("ghi(\\d+)");
+		for (size_t i = 0; i < sizeof(switch_patterns) / sizeof(switch_patterns[0]); i++)
+			sm.add_switch_case(switch_patterns[i]);
 		bool result = sm.finalize_switch();
 		if (!result) {
 			printf("error: %s\n", sm.error().c_str());
