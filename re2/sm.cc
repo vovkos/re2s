@@ -494,16 +494,17 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   const uint8_t* ep = bp + length;
   const uint8_t* p = bp;
   const uint8_t* end = ep;
-  const uint8_t* lastmatch = NULL;  // most recent matching position in text
   const uint8_t* bytemap = prog->bytemap();
-  int lastmatch_id;
+  const uint8_t* lastmatch = NULL;  // most recent matching position in text
+  DFA::State* lastmatch_state = NULL;
 
   if (reverse)
     std::swap(p, end);
 
   if (s->IsMatch()) {
     lastmatch = p;
-    lastmatch_id = s->match_id;
+    if (!reverse)
+      lastmatch_state = s;
   }
 
   while (p != end) {
@@ -521,12 +522,15 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       if (!ns) {
         DFA::StateSaver save_start(dfa, start);
         DFA::StateSaver save_s(dfa, s);
+        DFA::StateSaver save_lastmatch_state(dfa, lastmatch_state);
 
         dfa->ResetCache(params->cache_lock);
 
-        start = save_start.Restore();
-        s = save_s.Restore();
-        if (!start || !s)
+        if (
+          !(start = save_start.Restore()) ||
+          !(s = save_s.Restore()) ||
+          !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore())
+        )
           return kErrorOutOfMemory;
 
         state->dfa_start_state_ = start; // update start state
@@ -548,19 +552,19 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     if (ns <= SpecialStateMax) {
       if (ns == DeadState) {
         if (reverse) {
-          if (lastmatch) // the DFA notices the match one byte late
-            state->match_start_offset_ = state->offset_ - (ep - lastmatch) + 1;
+          if (lastmatch)
+            state->match_start_offset_ = state->offset_ - (ep - lastmatch);
           else if (state->match_start_offset_ == -1)
             return kErrorInconsistent;
 
           state->flags_ |= State::kMatch;
           return kMatch;
         } else {
-          if (lastmatch) { // the DFA notices the match one byte late
-            state->match_end_offset_ = state->offset_ + (lastmatch - bp) - 1;
+          if (lastmatch) {
+            state->match_end_offset_ = state->offset_ + (lastmatch - bp);
             state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
             state->match_next_char_ = *lastmatch;
-            state->match_id_ = lastmatch_id;
+            state->match_id_ = lastmatch_state->match_id;
           } else if (state->match_end_offset_ == -1) {
             state->flags_ |= State::kMismatch;
             return kMismatch;
@@ -572,7 +576,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           return kContinueBackward;
         }
       } else {
-        assert(ns == FullMatchState); // matches all the way to the end
+        assert(ns == FullMatchState);
         if (reverse) {
           state->match_start_offset_ = state->base_offset_;
           state->flags_ |= State::kMatch;
@@ -597,8 +601,9 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
     s = ns;
     if (s->IsMatch()) {
-      lastmatch = p;
-      lastmatch_id = s->match_id;
+      lastmatch = reverse ? p + 1 : p - 1;
+      if (!reverse)
+        lastmatch_state = s;
     }
   }
 
@@ -609,7 +614,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       state->match_end_offset_ = state->offset_ + (lastmatch - bp) - 1;
       state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
       state->match_next_char_ = *lastmatch;
-      state->match_id_ = lastmatch_id;
+      state->match_id_ = lastmatch_state->match_id;
     }
 
   state->dfa_state_ = s;
