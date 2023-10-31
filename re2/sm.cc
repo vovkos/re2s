@@ -273,8 +273,9 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
         return kContinueBackward;
       }
 
-      chunk.remove_suffix(overshoot_size);
       state->offset_ = state->match_end_offset_;
+      state->match_next_char_ = chunk[chunk.size() - overshoot_size];
+      chunk.remove_suffix(overshoot_size);
     }
 
     DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
@@ -498,11 +499,14 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   const uint8_t* lastmatch = NULL;  // most recent matching position in text
   DFA::State* lastmatch_state = NULL;
 
-  if (reverse)
+  if (reverse) {
     std::swap(p, end);
+    if (state->offset_ == state->match_end_offset_ && bp < ep)
+      state->match_end_char_ = ep[-1];
+  }
 
   if (s->IsMatch()) {
-    lastmatch = p;
+    lastmatch = reverse ? p + 1 : p - 1;
     if (!reverse)
       lastmatch_state = s;
   }
