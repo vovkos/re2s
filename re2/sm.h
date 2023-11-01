@@ -247,9 +247,6 @@ class RE2::SM::State {
     reset(base_offset, prev_char, eof_offset, eof_char);
   }
 
-  bool is_match() const {
-    return match_id_ != -1;
-  }
   uint64_t base_offset() const {
     return base_offset_;
   }
@@ -267,6 +264,14 @@ class RE2::SM::State {
   }
   int match_id() const {
     return match_id_;
+  }
+
+  // these 2 getters are for debug purpose only (should be removed later)
+  int match_last_char() const {
+    return match_last_char_;
+  }
+  int match_next_char() const {
+    return match_next_char_;
   }
 
   void reset() {
@@ -299,8 +304,6 @@ class RE2::SM::State {
   int flags_;
   int base_char_;
   int eof_char_;
-
-public: // temporarily for debug purposes
   int match_last_char_;
   int match_next_char_;
 };
