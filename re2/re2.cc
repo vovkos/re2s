@@ -194,6 +194,8 @@ int RE2::Options::ParseFlags() const {
 
   if (one_line())
     flags |= Regexp::OneLine;
+  else if (multi_line()) // let one_line take precedence
+    flags &= ~Regexp::OneLine;
 
   return flags;
 }
