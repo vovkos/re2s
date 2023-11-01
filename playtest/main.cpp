@@ -110,11 +110,13 @@ int main() {
 			match.assign(text + state.match_start_offset(), state.match_length());
 
 			printf(
-				"match id: %d at %zd:%zd '%s'\n",
+				"match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 				state.match_id(),
 				state.match_start_offset(),
 				state.match_end_offset(),
-				match.c_str()
+				match.c_str(),
+				state.match_last_char_,
+				state.match_next_char_
 			);
 
 			print_re2_sm_submatches(sm, state.match_id(), match);
@@ -154,11 +156,13 @@ int main() {
 			case re2::RE2::SM::kMatch:
 				match.assign(text + state.match_start_offset(), state.match_length());
 				printf(
-					"fmatch id: %d at %zd:%zd '%s'\n",
+					"fmatch id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 					state.match_id(),
 					state.match_start_offset(),
 					state.match_end_offset(),
-					match.c_str()
+					match.c_str(),
+					state.match_last_char_,
+					state.match_next_char_
 				);
 
 				print_re2_sm_submatches(sm, state.match_id(), match);
@@ -178,11 +182,13 @@ int main() {
 					case re2::RE2::SM::kMatch:
 						match.assign(text + state.match_start_offset(), state.match_length());
 						printf(
-							"rmatch id: %d at %zd:%zd '%s'\n",
+							"rmatch id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 							state.match_id(),
 							state.match_start_offset(),
 							state.match_end_offset(),
-							match.c_str()
+							match.c_str(),
+							state.match_last_char_,
+							state.match_next_char_
 						);
 
 						print_re2_sm_submatches(sm, state.match_id(), match);
