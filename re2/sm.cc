@@ -66,9 +66,10 @@ void RE2::SM::clear() {
 }
 
 void RE2::SM::init() {
+  kind_ = kUninitialized;
+  anchor_ = RE2::UNANCHORED;
   rprog_ = NULL;
   error_code_ = NoError;
-  anchor_ = RE2::UNANCHORED;
 }
 
 bool RE2::SM::parse_module(Module* module, absl::string_view pattern)  {
@@ -257,15 +258,12 @@ struct RE2::SM::DfaLoopParams: DfaBaseParams {
 };
 
 RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
-  if (!ok() || (state->flags_ & State::kMismatch))
-    return kErrorInconsistent;
+  assert(ok() && !(state->flags_ & State::kInvalid) && kind_ && "invalid usage");
 
   if (state->flags_ & State::kMatch) // restart after match
-    state->reset(state->match_end_offset_, state->match_end_char_, state->eof_offset_, state->eof_char_);
+    state->reset(state->match_end_offset_, state->match_last_char_, state->eof_offset_, state->eof_char_);
 
-  // already in the reverse scan state
-
-  if (state->flags_ & State::kReverse) {
+  if (state->flags_ & State::kReverse) { // reverse scan state
     if (state->offset_ > state->match_end_offset_) { // overshoot
       uint64_t overshoot_size = state->offset_ - state->match_end_offset_;
       if (overshoot_size > chunk.size()) {
@@ -280,7 +278,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
 
     DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
     DfaLoopParams loop_params(state, &cache_lock, chunk);
-    return reverse_dfa_loop(&loop_params);
+    return dfa_loop(&loop_params);
   }
 
   // forward scan
@@ -292,15 +290,15 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
     (state->flags_ & (State::kInitialized | State::kReverse | State::kFullMatch)) ==
     (State::kInitialized | State::kFullMatch)
   ) { // scan all the way to the EOF
-    state->offset_ += chunk.length();
-    if (state->offset_ < state->eof_offset_) {
-      if (!chunk.empty())
-        state->last_char_ = chunk.back();
-      return kContinue;
+    if (!chunk.empty()) {
+      state->offset_ += chunk.length();
+      state->match_last_char_ = chunk.back();
     }
 
+    if (state->offset_ < state->eof_offset_)
+      return kContinue;
+
     state->match_end_offset_ = state->offset_;
-    state->match_end_char_ = !chunk.empty() ? chunk.back() : state->last_char_;
     state->match_next_char_ = state->eof_char_;
   } else if (state->flags_ & State::kInitialized) {
     DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
@@ -311,42 +309,32 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
   } else {
     if (prog->anchor_start() || anchor_) {
       if (state->base_offset() != 0) { // mismatch on the start anchor
-        state->flags_ |= State::kMismatch;
+        state->flags_ |= State::kInvalid;
         return kMismatch;
       }
 
       state->flags_ |= State::kAnchored;
     }
 
-    if (prog->anchor_end() || anchor_ == RE2::ANCHOR_BOTH) { // can skip forward scan and start from eof
-      state->offset_ += chunk.length();
-      if (state->offset_ < state->eof_offset_) {
-        state->flags_ |= State::kInitialized | State::kFullMatch;
-        if (!chunk.empty())
-          state->last_char_ = chunk.back();
-        return kContinue;
-      }
+    // we want a match_id, so we never skip the forward scan even if it has the end anchor
 
-      state->match_end_offset_ = state->offset_;
-      state->match_end_char_ = !chunk.empty() ? chunk.back() : state->last_char_;
-      state->match_next_char_ = state->eof_char_;
-    } else { // main forward scan loop
-      Prog::MatchKind kind = options_.longest_match() ? Prog::kLongestMatch : Prog::kFirstMatch;
-      state->dfa_ = prog->GetDFA(kind);
-      state->dfa_->want_match_id_ = true;
+    Prog::MatchKind kind = options_.longest_match() ? Prog::kLongestMatch : Prog::kFirstMatch;
+    state->dfa_ = prog->GetDFA(kind);
+    state->dfa_->want_match_id_ = true;
 
-      DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
-      SelectDfaStartStateParams select_start_params(state, &cache_lock);
-      if (!select_dfa_start_state(&select_start_params))
-        return kErrorOutOfMemory;
-
-      state->flags_ |= State::kInitialized;
-
-      DfaLoopParams loop_params(state, &cache_lock, chunk);
-      ExecResult exec_result = dfa_loop(&loop_params);
-      if (exec_result != kContinueBackward)
-        return exec_result;
+    DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
+    SelectDfaStartStateParams select_start_params(state, &cache_lock);
+    if (!select_dfa_start_state(&select_start_params)) {
+      state->flags_ |= State::kInvalid;
+      return kErrorOutOfMemory;
     }
+
+    state->flags_ |= State::kInitialized;
+
+    DfaLoopParams loop_params(state, &cache_lock, chunk);
+    ExecResult exec_result = dfa_loop(&loop_params);
+    if (exec_result != kContinueBackward)
+      return exec_result;
   }
 
   // reverse scan
@@ -358,8 +346,10 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
 
   DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
   SelectDfaStartStateParams select_start_params(state, &cache_lock);
-  if (!select_dfa_start_state(&select_start_params))
+  if (!select_dfa_start_state(&select_start_params)) {
+    state->flags_ |= State::kInvalid;
     return kErrorOutOfMemory;
+  }
 
   if (prev_offset >= state->match_end_offset_) { // overshoot
     state->offset_ = prev_offset;
@@ -371,7 +361,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
   state->offset_ = state->match_end_offset_;
 
   DfaLoopParams loop_params(state, &cache_lock, absl::string_view(chunk.data(), prefix_size));
-  return reverse_dfa_loop(&loop_params);
+  return dfa_loop(&loop_params);
 }
 
 bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
@@ -499,10 +489,13 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   const uint8_t* lastmatch = NULL;  // most recent matching position in text
   DFA::State* lastmatch_state = NULL;
 
+  if (ExtraDebug)
+    printf("%s ->\n", dfa->DumpState(s).c_str());
+
   if (reverse) {
     std::swap(p, end);
     if (state->offset_ == state->match_end_offset_ && bp < ep)
-      state->match_end_char_ = ep[-1];
+      state->match_last_char_ = ep[-1];
   }
 
   if (s->IsMatch()) {
@@ -534,43 +527,43 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           !(start = save_start.Restore()) ||
           !(s = save_s.Restore()) ||
           !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore())
-        )
+        ) {
+          state->flags_ |= State::kInvalid;
           return kErrorOutOfMemory;
+        }
 
         state->dfa_start_state_ = start; // update start state
 
         ns = dfa->RunStateOnByteUnlocked(s, c);
-        if (!ns)
+        if (!ns) {
+          state->flags_ |= State::kInvalid;
           return kErrorOutOfMemory;
+        }
       }
     }
 
     if (ExtraDebug)
-      printf(
-        "%s -> '%c' -> %s\n",
-        dfa->DumpState(s).c_str(),
-        c,
-        dfa->DumpState(ns).c_str()
-      );
+      printf("  '%c' -> %s\n", c, dfa->DumpState(ns).c_str());
 
     if (ns <= SpecialStateMax) {
       if (ns == DeadState) {
         if (reverse) {
           if (lastmatch)
             state->match_start_offset_ = state->offset_ - (ep - lastmatch);
-          else if (state->match_start_offset_ == -1)
+          else if (state->match_start_offset_ == -1) {
+            state->flags_ |= State::kInvalid;
             return kErrorInconsistent;
+          }
 
           state->flags_ |= State::kMatch;
           return kMatch;
         } else {
           if (lastmatch) {
             state->match_end_offset_ = state->offset_ + (lastmatch - bp);
-            state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
             state->match_next_char_ = *lastmatch;
             state->match_id_ = lastmatch_state->match_id;
           } else if (state->match_end_offset_ == -1) {
-            state->flags_ |= State::kMismatch;
+            state->flags_ |= State::kInvalid;
             return kMismatch;
           }
 
@@ -588,15 +581,11 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
         } else {
           state->offset_ += length;
           if (state->offset_ < state->eof_offset_) {
-            if (bp < ep)
-              state->last_char_ = ep[-1];
-
             state->flags_ |= State::kFullMatch;
             return kContinue;
           }
 
           state->match_end_offset_ = state->offset_;
-          state->match_end_char_ = bp < ep ? ep[-1] : state->last_char_;
           state->match_next_char_ = state->eof_char_;
           return kContinueBackward;
         }
@@ -613,10 +602,9 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
   if (lastmatch) // the DFA notices the match one byte late
     if (reverse)
-      state->match_start_offset_ = state->offset_ - (ep - lastmatch) + 1;
+      state->match_start_offset_ = state->offset_ - (ep - lastmatch);
     else {
-      state->match_end_offset_ = state->offset_ + (lastmatch - bp) - 1;
-      state->match_end_char_ = lastmatch > bp ? lastmatch[-1] : state->last_char_;
+      state->match_end_offset_ = state->offset_ + (lastmatch - bp);
       state->match_next_char_ = *lastmatch;
       state->match_id_ = lastmatch_state->match_id;
     }
@@ -629,11 +617,8 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       return kContinueBackward;
   } else {
     state->offset_ = state->offset_ + length;
-    if (state->offset_ < state->eof_offset_) {
-      if (bp < ep)
-        state->last_char_ = ep[-1];
+    if (state->offset_ < state->eof_offset_)
       return kContinue;
-    }
   }
 
   // process eof -- triggers either match or mismatch
@@ -645,38 +630,42 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     ns = dfa->RunStateOnByteUnlocked(s, c);
     if (!ns) {
       DFA::StateSaver save_s(dfa, s);
+      DFA::StateSaver save_lastmatch_state(dfa, lastmatch_state);
 
       dfa->ResetCache(params->cache_lock);
 
-      s = save_s.Restore();
-      if (!s)
+      if (
+        !(s = save_s.Restore()) ||
+        !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore())
+      ) {
+        state->flags_ |= State::kInvalid;
         return kErrorOutOfMemory;
+      }
 
       ns = dfa->RunStateOnByteUnlocked(s, c);
-      if (!ns)
+      if (!ns) {
+        state->flags_ |= State::kInvalid;
         return kErrorOutOfMemory;
+      }
     }
   }
 
   if (ExtraDebug)
-    printf(
-      "%s -> '\\%03d' -> %s\n",
-      dfa->DumpState(s).c_str(),
-      c,
-      dfa->DumpState(ns).c_str()
-    );
+    printf("  '\\%03d' -> %s\n", c, dfa->DumpState(ns).c_str());
 
   if (ns <= SpecialStateMax) {
     if (ns == DeadState) {
       if (reverse) {
-        if (state->match_start_offset_ == -1)
+        if (state->match_start_offset_ == -1) {
+          state->flags_ |= State::kInvalid;
           return kErrorInconsistent;
+        }
 
         state->flags_ |= State::kMatch;
         return kMatch;
       } else {
         if (state->match_end_offset_ == -1) {
-          state->flags_ |= State::kMismatch;
+          state->flags_ |= State::kInvalid;
           return kMismatch;
         }
 
@@ -690,7 +679,6 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
         return kMatch;
       } else {
         state->match_end_offset_ = state->offset_;
-        state->match_end_char_ = bp < ep ? ep[-1] : state->last_char_;
         state->match_next_char_ = state->eof_char_;
         return kContinueBackward;
       }
@@ -704,7 +692,6 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       return kMatch;
     } else {
       state->match_end_offset_ = state->offset_;
-      state->match_end_char_ = bp < ep ? ep[-1] : state->last_char_;
       state->match_next_char_ = state->eof_char_;
       state->match_id_ = ns->match_id;
       return kContinueBackward;
@@ -712,14 +699,16 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   }
 
   if (reverse) {
-    if (state->match_start_offset_ == -1)
+    if (state->match_start_offset_ == -1) {
+      state->flags_ |= State::kInvalid;
       return kErrorInconsistent;
+    }
 
     state->flags_ |= State::kMatch;
     return kMatch;
   } else {
     if (state->match_end_offset_ == -1) {
-      state->flags_ |= State::kMismatch;
+      state->flags_ |= State::kInvalid;
       return kMismatch;
     }
 
@@ -753,19 +742,6 @@ RE2::SM::ExecResult RE2::SM::dfa_loop(DfaLoopParams* params) {
 
   size_t i = params->state->flags_ & 0x03; // State::kCanPrefixAccel | State::kReverse;
   return funcTable[i](params);
-}
-
-inline RE2::SM::ExecResult RE2::SM::reverse_dfa_loop(DfaLoopParams* params) {
-  ExecResult exec_result = dfa_loop(params);
-  switch (exec_result) {
-  case kMatch:
-  case kContinueBackward:
-    return exec_result;
-
-  default:
-    assert(false && "unexpected result from reverse DFA loop");
-    return kErrorInconsistent;
-  }
 }
 
 }  // namespace re2

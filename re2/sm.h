@@ -70,7 +70,7 @@ class RE2::SM {
 
   enum ExecResult {
 	  kErrorInconsistent = -2, // reverse scan couldn't find a match (inconsistent data)
-	  kErrorOutOfMemory  = -1, // out-of-memory
+	  kErrorOutOfMemory  = -1, // DFA run out-of-memory
 	  kMismatch          = 0,  // match can't be found; next exec will reset & restart
 	  kContinue,               // match not found yet; continue feeding next chunks of data
 	  kContinueBackward,       // match end found; continue feeding previous chunks of data
@@ -78,6 +78,7 @@ class RE2::SM {
   };
 
   enum Kind {
+    kUninitialized,
     kSingleRegexp,
     kRegexpSwitch,
   };
@@ -199,18 +200,18 @@ class RE2::SM {
   static inline ExecResult dfa_loop_tt(DfaLoopParams* params);
 
   static ExecResult dfa_loop(DfaLoopParams* params);
-  static inline ExecResult reverse_dfa_loop(DfaLoopParams* params);
 
  private:
   Options options_;
-  RE2::Anchor anchor_;
   Kind kind_;
+  RE2::Anchor anchor_;
+  ErrorCode error_code_;
+  std::string error_;
+  std::string error_arg_;
+
   std::vector<Module*> switch_case_array_;
   Module main_module_;
   Prog* rprog_;
-  std::string error_;
-  std::string error_arg_;
-  ErrorCode error_code_;
 };
 
 class RE2::SM::State {
@@ -218,13 +219,13 @@ class RE2::SM::State {
 
  protected:
    enum Flags {
-     kReverse        = 0x0001, // backward DFA scan to find the start of a match
+     kReverse        = 0x0001, // revere DFA scan to find the start of a match
      kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
      kAnchored       = 0x0010, // anchored search
      kInitialized    = 0x0020, // state is initialized
      kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
-     kMatch          = 0x0100, // match or mismatch; need to reset
-     kMismatch       = 0x0200, // match or mismatch; need to reset
+     kMatch          = 0x0100, // post match; will auto-restart on the next exec
+     kInvalid        = 0x0200, // post error or mismatch; needs a manual reset
    };
 
  public:
@@ -298,9 +299,10 @@ class RE2::SM::State {
   int flags_;
   int base_char_;
   int eof_char_;
-  int match_end_char_;
+
+public: // temporarily for debug purposes
+  int match_last_char_;
   int match_next_char_;
-  int last_char_;
 };
 
 inline void RE2::SM::State::reset(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char) {
@@ -313,9 +315,8 @@ inline void RE2::SM::State::reset(uint64_t base_offset, int base_char, uint64_t 
   flags_ = 0;
   base_char_ = base_char;
   eof_char_ = eof_char;
-  match_end_char_ = base_char;
+  match_last_char_ = base_char;
   match_next_char_ = eof_char;
-  last_char_ = base_char;
 }
 
 inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
