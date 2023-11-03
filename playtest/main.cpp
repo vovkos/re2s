@@ -81,12 +81,12 @@ int main() {
 		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
 		else {
-			match.assign(text + state.match_start_offset(), state.match_length());
+			match.assign(text + state.match_offset(), state.match_length());
 
 			printf(
 				"match id: %d at %zd:%zd '%s', \n",
 				state.match_id(),
-				state.match_start_offset(),
+				state.match_offset(),
 				state.match_end_offset(),
 				match.c_str()
 			);
@@ -115,12 +115,12 @@ int main() {
 		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
 		else {
-			match.assign(text + state.match_start_offset(), state.match_length());
+			match.assign(text + state.match_offset(), state.match_length());
 
 			printf(
 				"match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 				state.match_id(),
-				state.match_start_offset(),
+				state.match_offset(),
 				state.match_end_offset(),
 				match.c_str(),
 				state.match_last_char(),
@@ -184,11 +184,11 @@ int main() {
 				ABSL_FALLTHROUGH_INTENDED;
 
 			case re2::RE2::SM::kMatch:
-				match.assign(text + state.match_start_offset(), state.match_length());
+				match.assign(text + state.match_offset(), state.match_length());
 				printf(
 					"+match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 					state.match_id(),
-					state.match_start_offset(),
+					state.match_offset(),
 					state.match_end_offset(),
 					match.c_str(),
 					state.match_last_char(),

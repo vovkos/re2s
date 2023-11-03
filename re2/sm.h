@@ -83,6 +83,10 @@ class RE2::SM {
     kRegexpSwitch,
   };
 
+   enum {
+     kByteEndText = 256 // same as DFA::kByteEndText
+   };
+
  public:
   SM() {
     init();
@@ -168,7 +172,9 @@ class RE2::SM {
 
   // main entry point
 
+  State exec(absl::string_view text) const;
   ExecResult exec(State* state, absl::string_view chunk) const;
+  ExecResult eof(State* state, int eof_char = kByteEndText) const;
 
   bool capture_submatches(
     absl::string_view match,
@@ -229,44 +235,48 @@ class RE2::SM::State {
    };
 
  public:
-   enum {
-     kByteEndText = 256 // same as in DFA::kByteEndText
-   };
-
- public:
   State() {
     reset();
   }
-  State(uint64_t base_offset, int prev_char) {
-    reset(base_offset, prev_char);
+  State(uint64_t base_offset, int base_char) {
+    reset(base_offset, base_char);
   }
-  State(uint64_t base_offset, int prev_char, uint64_t eof_offset) {
-    reset(base_offset, prev_char, eof_offset);
-  }
-  State(uint64_t base_offset, int prev_char, uint64_t eof_offset, int eof_char) {
-    reset(base_offset, prev_char, eof_offset, eof_char);
+  State(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char = kByteEndText) {
+    reset(base_offset, base_char, eof_offset, eof_char);
   }
 
+  operator bool () const {
+    return is_match();
+  }
+
+  bool is_match() const {
+    return (flags_ & kMatch) != 0;
+  }
   uint64_t base_offset() const {
     return base_offset_;
   }
   uint64_t eof_offset() const {
     return eof_offset_;
   }
-  uint64_t match_start_offset() const {
-    return match_start_offset_;
+  uint64_t match_offset() const {
+    return match_offset_;
   }
   uint64_t match_end_offset() const {
     return match_end_offset_;
   }
   uint64_t match_length() const {
-    return match_end_offset_ - match_start_offset_;
+    return match_end_offset_ - match_offset_;
   }
   int match_id() const {
     return match_id_;
   }
 
-  // these 2 getters are for debug purpose only (should be removed later)
+  int base_char() const {
+    return base_char_;
+  }
+  int eof_char() const {
+    return eof_char_;
+  }
   int match_last_char() const {
     return match_last_char_;
   }
@@ -280,16 +290,9 @@ class RE2::SM::State {
   void reset(uint64_t base_offset, int base_char) {
     reset(base_offset, base_char, -1, kByteEndText);
   }
-  void reset(uint64_t base_offset, int base_char, uint64_t eof_offset) {
-    reset(base_offset, base_char, eof_offset, kByteEndText);
-  }
-  void reset(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char);
+  void reset(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char = kByteEndText);
 
-  void set_eof(uint64_t offset) {
-    set_eof(offset, kByteEndText);
-  }
-
-  void set_eof(uint64_t offset, int eof_char);
+  void set_eof(uint64_t offset, int eof_char = kByteEndText);
 
  private:
   DFA* dfa_;
@@ -298,7 +301,7 @@ class RE2::SM::State {
   uint64_t offset_;
   uint64_t base_offset_;
   uint64_t eof_offset_;
-  uint64_t match_start_offset_;
+  uint64_t match_offset_;
   uint64_t match_end_offset_;
   int match_id_;
   int flags_;
@@ -312,7 +315,7 @@ inline void RE2::SM::State::reset(uint64_t base_offset, int base_char, uint64_t 
   offset_ = base_offset;
   base_offset_ = base_offset;
   eof_offset_ = eof_offset;
-  match_start_offset_ = -1;
+  match_offset_ = -1;
   match_end_offset_ = -1;
   match_id_ = -1;
   flags_ = 0;
@@ -327,6 +330,18 @@ inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
   assert(offset >= offset_ && "invalid eof offset");
   eof_offset_ = offset;
   eof_char = eof_char;
+}
+
+inline RE2::SM::ExecResult RE2::SM::eof(State* state, int eof_char) const {
+  state->set_eof(state->offset_, eof_char);
+  return exec(state, absl::string_view("", 0));
+}
+
+inline RE2::SM::State RE2::SM::exec(absl::string_view text) const {
+  State state;
+  state.set_eof(text.length());
+  exec(&state, text);
+  return state;
 }
 
 }  // namespace re2
