@@ -59,10 +59,10 @@ void RE2::SM::clear() {
   options_ = RE2::DefaultOptions;
   anchor_ = RE2::UNANCHORED;
 
-  for (intptr_t i = switch_case_array_.size() - 1; i >= 0; i--)
-    delete switch_case_array_[i];
+  for (intptr_t i = switch_case_module_array_.size() - 1; i >= 0; i--)
+    delete switch_case_module_array_[i];
 
-  switch_case_array_.clear();
+  switch_case_module_array_.clear();
 }
 
 void RE2::SM::init() {
@@ -167,9 +167,9 @@ void RE2::SM::create_switch(const Options& options, RE2::Anchor anchor) {
 }
 
 int RE2::SM::add_switch_case(absl::string_view pattern) {
-  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
 
-  int match_id = (int)switch_case_array_.size();
+  int match_id = (int)switch_case_module_array_.size();
   std::unique_ptr<Module> module = std::make_unique<Module>(match_id);
   bool result =
     parse_module(module.get(), pattern) &&
@@ -178,12 +178,13 @@ int RE2::SM::add_switch_case(absl::string_view pattern) {
   if (!result)
     return -1;
 
-  switch_case_array_.push_back(module.release());
+  switch_case_module_array_.push_back(module.release());
   return match_id;
 }
 
 bool RE2::SM::finalize_switch() {
-  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+
   assert(
     main_module_.regexp_ == NULL &&
     main_module_.prog_ == NULL &&
@@ -193,7 +194,7 @@ bool RE2::SM::finalize_switch() {
 
   // sort to help Regex::Simpify()
 
-  std::vector<Module*> v = switch_case_array_;
+  std::vector<Module*> v = switch_case_module_array_;
 
   std::sort(
     v.begin(),
@@ -205,7 +206,7 @@ bool RE2::SM::finalize_switch() {
 
   Regexp::ParseFlags flags = (Regexp::ParseFlags)options_.ParseFlags();
 
-  int count = (int)switch_case_array_.size();
+  int count = (int)switch_case_module_array_.size();
   PODArray<re2::Regexp*> sub(count);
   for (int i = 0; i < count; i++)
     sub[i] = v[i]->regexp_->Incref(); // will be Decref-ed by the parent Regexp
@@ -258,7 +259,12 @@ struct RE2::SM::DfaLoopParams: DfaBaseParams {
 };
 
 RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
-  assert(ok() && !(state->flags_ & State::kInvalid) && kind_ && "invalid usage");
+  assert(
+    ok() &&
+    !(state->flags_ & State::kInvalid) &&
+    kind_ &&
+    "invalid usage"
+  );
 
   if (state->flags_ & State::kMatch) // restart after match
     state->reset(state->match_end_offset_, state->match_last_char_, state->eof_offset_, state->eof_char_);
@@ -337,7 +343,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, absl::string_view chunk) const {
 
   // reverse scan
 
-  assert(state->match_end_offset_ != -1);
+  assert(state->match_end_offset_ != -1 && "reverse scan without end-of-match");
 
   state->dfa_ = rprog_->GetDFA(Prog::kLongestMatch);
   state->flags_ = State::kReverse | State::kAnchored | State::kInitialized;
@@ -570,8 +576,8 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
           return kContinueBackward;
         }
-      } else {
-        assert(ns == FullMatchState);
+      } else { // match all the way to the end
+        assert(ns == FullMatchState && "invalid DFA special state");
         if (reverse) {
           state->match_offset_ = state->base_offset_;
           state->flags_ |= State::kMatch;
@@ -669,8 +675,8 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
         return kContinueBackward;
       }
-    } else {
-      assert(ns == FullMatchState); // matches all the way to the end
+    } else { // match all the way to the end
+        assert(ns == FullMatchState && "invalid DFA special state");
       if (reverse) {
         state->match_offset_ = state->offset_;
         state->flags_ |= State::kMatch;

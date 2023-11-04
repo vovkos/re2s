@@ -24,7 +24,6 @@ class RE2::SM {
   struct SelectDfaStartStateParams;
   struct DfaLoopParams;
 
- public:
   struct Module {
     Module(int match_id = 0);
     ~Module() {
@@ -125,8 +124,6 @@ class RE2::SM {
     return error_arg_;
   }
 
-  void clear();
-
   Kind kind() const {
     return kind_;
   }
@@ -139,38 +136,42 @@ class RE2::SM {
     return anchor_;
   }
 
-  // kSingleRegexp
-
-  const Module* module() const {
-    return &main_module_;
+  size_t switch_case_count() {
+    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+    return switch_case_module_array_.size();
   }
 
   const std::string& pattern() const {
+    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
     return main_module_.pattern();
   }
 
+  const std::string& pattern(int id) const {
+    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+    return switch_case_module_array_[id]->pattern();
+  }
+
   size_t capture_count() const {
+    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
     return main_module_.capture_count();
   }
 
+  size_t capture_count(int id) const {
+    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+    return switch_case_module_array_[id]->capture_count();
+  }
+
+  // compilation
+
+  void clear();
+
   bool create(absl::string_view pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
-
-  // kRegexpSwitch
-
-  size_t switch_case_count() {
-    assert(kind_ == kRegexpSwitch);
-    return switch_case_array_.size();
-  }
-
-  const Module* switch_case(size_t i) const {
-    return switch_case_array_[i];
-  }
 
   void create_switch(const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
   int add_switch_case(absl::string_view pattern);
   bool finalize_switch();
 
-  // main entry point
+  // execution
 
   State exec(absl::string_view text) const;
   ExecResult exec(State* state, absl::string_view chunk) const;
@@ -181,6 +182,17 @@ class RE2::SM {
     absl::string_view* submatches,
     size_t nsubmatches
   ) const {
+    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
+    return main_module_.capture_submatches(match, submatches, nsubmatches);
+  }
+
+  bool capture_submatches(
+    int id,
+    absl::string_view match,
+    absl::string_view* submatches,
+    size_t nsubmatches
+  ) const {
+    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
     return main_module_.capture_submatches(match, submatches, nsubmatches);
   }
 
@@ -215,7 +227,7 @@ class RE2::SM {
   std::string error_;
   std::string error_arg_;
 
-  std::vector<Module*> switch_case_array_;
+  std::vector<Module*> switch_case_module_array_;
   Module main_module_;
   Prog* rprog_;
 };
@@ -332,16 +344,16 @@ inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
   eof_char = eof_char;
 }
 
-inline RE2::SM::ExecResult RE2::SM::eof(State* state, int eof_char) const {
-  state->set_eof(state->offset_, eof_char);
-  return exec(state, absl::string_view("", 0));
-}
-
 inline RE2::SM::State RE2::SM::exec(absl::string_view text) const {
   State state;
   state.set_eof(text.length());
   exec(&state, text);
   return state;
+}
+
+inline RE2::SM::ExecResult RE2::SM::eof(State* state, int eof_char) const {
+  state->set_eof(state->offset_, eof_char);
+  return exec(state, absl::string_view("", 0));
 }
 
 }  // namespace re2

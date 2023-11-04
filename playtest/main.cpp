@@ -18,12 +18,20 @@ void print_re2_sm_submatches(const re2::RE2::SM& sm, int match_id, absl::string_
 		MaxSubmatchCount = 8
 	};
 
-	const re2::RE2::SM::Module* module = sm.kind() == re2::RE2::SM::kSingleRegexp ? sm.module() : sm.switch_case(match_id);
-	size_t capture_count = module->capture_count() + 1;
-	assert(capture_count < MaxSubmatchCount);
+  absl::string_view submatches[MaxSubmatchCount];
+  size_t capture_count;
+  bool result;
 
-	absl::string_view submatches[MaxSubmatchCount];
-	bool result = module->capture_submatches(match, submatches, capture_count);
+  if (sm.kind() == re2::RE2::SM::kSingleRegexp) {
+    capture_count = sm.capture_count() + 1;
+   	assert(capture_count < MaxSubmatchCount);
+   	result = sm.capture_submatches(match, submatches, capture_count);
+  } else {
+    capture_count = sm.capture_count(match_id) + 1;
+   	assert(capture_count < MaxSubmatchCount);
+   	result = sm.capture_submatches(match_id, match, submatches, capture_count);
+  }
+
 	if (!result)
 		printf("can't capture submatches\n");
 	else
