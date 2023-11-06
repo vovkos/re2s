@@ -217,6 +217,8 @@ class Prog {
   int bytemap_range() { return bytemap_range_; }
   const uint8_t* bytemap() { return bytemap_; }
   bool can_prefix_accel() { return prefix_size_ != 0; }
+  bool prefix_foldcase() { return prefix_foldcase_; }
+  int prefix_front() { return prefix_front_; }
 
   // Accelerates to the first likely occurrence of the prefix.
   // Returns a pointer to the first byte or NULL if not found.
@@ -402,10 +404,11 @@ class Prog {
   // FOR TESTING ONLY.
   static void TESTING_ONLY_set_dfa_should_bail_when_slow(bool b);
 
+  DFA* GetDFA(MatchKind kind);
+
  private:
   friend class Compiler;
 
-  DFA* GetDFA(MatchKind kind);
   void DeleteDFA(DFA* dfa);
 
   bool anchor_start_;       // regexp has explicit start anchor

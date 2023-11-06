@@ -93,7 +93,7 @@ static inline std::map<int, std::string>* empty_group_names() {
 // Converts from Regexp error code to RE2 error code.
 // Maybe some day they will diverge.  In any event, this
 // hides the existence of Regexp from RE2 users.
-static RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code) {
+RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code) {
   switch (code) {
     case re2::kRegexpSuccess:
       return RE2::NoError;
@@ -192,6 +192,8 @@ int RE2::Options::ParseFlags() const {
 
   if (one_line())
     flags |= Regexp::OneLine;
+  else if (multi_line()) // let one_line take precedence
+    flags &= ~Regexp::OneLine;
 
   return flags;
 }

@@ -77,6 +77,7 @@ set(RE2_SOURCES
     re2/bitstate.cc
     re2/compile.cc
     re2/dfa.cc
+    re2/dfa.h
     re2/filtered_re2.cc
     re2/mimics_pcre.cc
     re2/nfa.cc
@@ -89,6 +90,7 @@ set(RE2_SOURCES
     re2/re2.cc
     re2/regexp.cc
     re2/set.cc
+    re2/sm.cc
     re2/simplify.cc
     re2/stringpiece.cc
     re2/tostring.cc
@@ -102,10 +104,27 @@ set(RE2_HEADERS
     re2/filtered_re2.h
     re2/re2.h
     re2/set.h
+    re2/sm.h
     re2/stringpiece.h
     )
 
-add_library(re2 ${RE2_SOURCES})
+set(RE2_HEADERS_P
+    re2/bitmap256.h
+    re2/dfa.h
+    re2/pod_array.h
+    re2/prefilter.h
+    re2/prefilter_tree.h
+    re2/prog.h
+    re2/regexp.h
+    re2/sparse_array.h
+    re2/sparse_set.h
+    re2/stringpiece.h
+    re2/unicode_casefold.h
+    re2/unicode_groups.h
+    re2/walker-inl.h
+    )
+
+add_library(re2 ${RE2_SOURCES} ${RE2_HEADERS} ${RE2_HEADERS_P})
 target_compile_features(re2 PUBLIC cxx_std_11)
 target_include_directories(re2 PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 # CMake gives "set_target_properties called with incorrect number of arguments."
@@ -216,3 +235,5 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/re2.pc.in
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/re2.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+add_subdirectory(playtest)
