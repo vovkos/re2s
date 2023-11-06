@@ -259,7 +259,11 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
   // form: in the former, kInstAlt existed explicitly... and abundantly; in
   // the latter, it's implied between the instructions that compose a list.
   // Thus, because the information wasn't lost, the bug doesn't remanifest.
-  PODArray<int> inst(q->size());
+  int size = q->size();
+  if (want_match_id_)
+    size += 2; // ensure there's enough space for MatchSep & match_id
+
+  PODArray<int> inst(size);
   int n = 0;
   uint32_t needflags = 0;  // flags needed by kInstEmptyWidth instructions
   bool sawmatch = false;   // whether queue contains guaranteed kInstMatch
@@ -367,15 +371,28 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
   }
 
   // Append MatchSep and the match IDs in mq if necessary.
-  if (mq != NULL) {
-    inst[n++] = MatchSep;
-    for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
-      int id = *i;
-      Prog::Inst* ip = prog_->inst(id);
-      if (ip->opcode() == kInstMatch)
-        inst[n++] = ip->match_id();
+  if (mq != NULL)
+    if (want_match_id_) {
+      int match_id = INT_MAX;
+      inst[n++] = MatchSep;
+
+      for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
+        int id = *i;
+        Prog::Inst* ip = prog_->inst(id);
+        if (ip->opcode() == kInstMatch && ip->match_id() < match_id)
+          match_id = ip->match_id();
+      }
+
+      inst[n++] = match_id;
+    } else if (kind_ == Prog::kManyMatch) {
+      inst[n++] = MatchSep;
+      for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
+        int id = *i;
+        Prog::Inst* ip = prog_->inst(id);
+        if (ip->opcode() == kInstMatch)
+          inst[n++] = ip->match_id();
+      }
     }
-  }
 
   // Save the needed empty-width flags in the top bits for use later.
   flag |= needflags << kFlagNeedShift;
@@ -435,7 +452,6 @@ DFA::State* DFA::CachedState(int* inst, int ninst, uint32_t flag) {
   memmove(s->inst_, inst, instmem);
   s->ninst_ = ninst;
   s->flag_ = flag;
-  s->match_id = INT_MAX;
   if (ExtraDebug)
     absl::FPrintF(stderr, " -> %s\n", DumpState(s));
 
@@ -747,24 +763,8 @@ DFA::State* DFA::RunStateOnByte(State* state, int c) {
 
   if (!ismatch)
     ns = WorkqToCachedState(q0_, NULL, flag);
-  else {
-    ns = WorkqToCachedState(q0_, kind_ == Prog::kManyMatch ? q1_ : NULL, flag);
-
-    if (want_match_id_) {
-      int match_id = INT_MAX;
-      for (Workq::iterator i = q1_->begin(); i != q1_->end(); ++i) {
-        int id = *i;
-        if (q1_->is_mark(id))
-          continue;
-
-        Prog::Inst* ip = prog_->inst(id);
-        if (ip->opcode() == kInstMatch && ip->match_id() < match_id)
-          match_id = ip->match_id();
-      }
-
-      ns->match_id = match_id;
-    }
-  }
+  else
+    ns = WorkqToCachedState(q0_, q1_, flag);
 
   // Flush ns before linking to it.
   // Write barrier before updating state->next_ so that the

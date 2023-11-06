@@ -565,7 +565,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           if (lastmatch) {
             state->match_end_offset_ = state->offset_ + (lastmatch - bp);
             state->match_next_char_ = *lastmatch;
-            state->match_id_ = lastmatch_state->match_id;
+            state->match_id_ = lastmatch_state->MatchId();
           } else if (state->match_end_offset_ == -1) {
             state->flags_ |= State::kInvalid;
             return kMismatch;
@@ -610,7 +610,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     else {
       state->match_end_offset_ = state->offset_ + (lastmatch - bp);
       state->match_next_char_ = *lastmatch;
-      state->match_id_ = lastmatch_state->match_id;
+      state->match_id_ = lastmatch_state->MatchId();
     }
 
   state->dfa_state_ = s;
@@ -697,7 +697,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     } else {
       state->match_end_offset_ = state->offset_;
       state->match_next_char_ = state->eof_char_;
-      state->match_id_ = ns->match_id;
+      state->match_id_ = ns->MatchId();
       return kContinueBackward;
     }
   }
