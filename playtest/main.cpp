@@ -160,7 +160,7 @@ int main() {
 		while (p < eof) {
 			size_t chunk_length = 1;
 			re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p, chunk_length));
-			assert(result != re2::RE2::SM::kMatch && "forward match can't happen with the current pattern + chunk_length");
+			assert(result != re2::RE2::SM::kMatch);
 			switch (result) {
 			case re2::RE2::SM::kContinue:
 				p += chunk_length;
@@ -185,7 +185,7 @@ int main() {
 						break;
 
 					default:
-						assert(false && "unexpected RE2::SM::exec result");
+						assert(false);
 						return -2;
 					}
 				}
@@ -209,7 +209,7 @@ int main() {
 				break;
 
 			default:
-				assert(false && "unexpected RE2::SM::exec result");
+				assert(false);
 				return -3;
 			}
 		}

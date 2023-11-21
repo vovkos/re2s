@@ -134,27 +134,27 @@ class RE2::SM {
   }
 
   size_t switch_case_count() {
-    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
+    assert(kind_ == kRegexpSwitch);
     return switch_case_module_array_.size();
   }
 
   const std::string& pattern() const {
-    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
+    assert(kind_ == kSingleRegexp);
     return main_module_.pattern();
   }
 
   const std::string& pattern(int id) const {
-    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+    assert(kind_ == kRegexpSwitch);
     return switch_case_module_array_[id]->pattern();
   }
 
   size_t capture_count() const {
-    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
+    assert(kind_ == kSingleRegexp);
     return main_module_.capture_count();
   }
 
   size_t capture_count(int id) const {
-    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+    assert(kind_ == kRegexpSwitch);
     return switch_case_module_array_[id]->capture_count();
   }
 
@@ -168,18 +168,24 @@ class RE2::SM {
   int add_switch_case(StringPiece pattern);
   bool finalize_switch();
 
-  // execution
+  // execution (single block of text)
 
   State exec(StringPiece text, RE2::Anchor anchor = RE2::UNANCHORED) const;
+
+  // execution (stream matcher interface)
+
   ExecResult exec(State* state, StringPiece chunk) const;
-  ExecResult eof(State* state, int eof_char = kByteEndText) const;
+  ExecResult exec_eof(State* state, StringPiece last_chunk, int eof_char = kByteEndText) const;
+  ExecResult exec_eof(State* state, int eof_char = kByteEndText) const {
+    return exec_eof(state, StringPiece("", 0), eof_char);
+  }
 
   bool capture_submatches(
     StringPiece match,
     StringPiece* submatches,
     size_t nsubmatches
   ) const {
-    assert(kind_ == kSingleRegexp && "invalid RE2::SM use (regexp kind mismatch)");
+    assert(kind_ == kSingleRegexp);
     return main_module_.capture_submatches(match, submatches, nsubmatches);
   }
 
@@ -189,8 +195,8 @@ class RE2::SM {
     StringPiece* submatches,
     size_t nsubmatches
   ) const {
-    assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
-    return main_module_.capture_submatches(match, submatches, nsubmatches);
+    assert(kind_ == kRegexpSwitch);
+    return switch_case_module_array_[id]->capture_submatches(match, submatches, nsubmatches);
   }
 
  private:
@@ -366,14 +372,13 @@ inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
 
 inline RE2::SM::State RE2::SM::exec(StringPiece text, RE2::Anchor anchor) const {
   State state(anchor);
-  state.set_eof(text.length());
-  exec(&state, text);
+  exec_eof(&state, text);
   return state;
 }
 
-inline RE2::SM::ExecResult RE2::SM::eof(State* state, int eof_char) const {
+inline RE2::SM::ExecResult RE2::SM::exec_eof(State* state, StringPiece last_chunk, int eof_char) const {
   state->set_eof(state->offset_, eof_char);
-  return exec(state, StringPiece("", 0));
+  return exec(state, last_chunk);
 }
 
 }  // namespace re2

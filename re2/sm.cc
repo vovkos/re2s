@@ -164,7 +164,7 @@ void RE2::SM::create_switch(const Options& options) {
 }
 
 int RE2::SM::add_switch_case(StringPiece pattern) {
-  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+  assert(kind_ == kRegexpSwitch);
 
   int match_id = (int)switch_case_module_array_.size();
   std::unique_ptr<Module> module = std::make_unique<Module>(match_id);
@@ -180,13 +180,12 @@ int RE2::SM::add_switch_case(StringPiece pattern) {
 }
 
 bool RE2::SM::finalize_switch() {
-  assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (regexp kind mismatch)");
+  assert(kind_ == kRegexpSwitch);
 
   assert(
     main_module_.regexp_ == NULL &&
     main_module_.prog_ == NULL &&
-    rprog_ == NULL &&
-    "invalid RE2::SM use (already finalized)"
+    rprog_ == NULL
   );
 
   // sort to help Regex::Simpify()
@@ -259,9 +258,13 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   assert(
     ok() &&
     !(state->flags_ & State::kInvalid) &&
-    kind_ &&
-    "invalid usage"
+    kind_ != kUninitialized
   );
+
+  if (!chunk.data()) {
+    assert(chunk.size() == 0);
+    chunk = StringPiece("", 0); // make sure we don't pass NULL pointers to dfa_loop
+  }
 
   if (state->flags_ & State::kMatch) // restart after match
     state->reset(state->anchor_, state->match_end_offset_, state->match_last_char_, state->eof_offset_, state->eof_char_);
@@ -344,7 +347,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   // reverse scan
 
-  assert(state->match_end_offset_ != -1 && "reverse scan without end-of-match");
+  assert(state->match_end_offset_ != -1);
 
   state->dfa_ = rprog_->GetDFA(Prog::kLongestMatch);
   state->flags_ = State::kReverse | State::kAnchored | State::kInitialized;
@@ -362,7 +365,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   }
 
   size_t prefix_size = state->match_end_offset_ - prev_offset;
-  assert(prefix_size <= chunk.size() && "inconsistent match end offset");
+  assert(prefix_size <= chunk.size());
   state->offset_ = state->match_end_offset_;
 
   DfaLoopParams loop_params(state, &cache_lock, StringPiece(chunk.data(), prefix_size));
@@ -578,7 +581,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           return kContinueBackward;
         }
       } else { // match all the way to the end
-        assert(ns == FullMatchState && "invalid DFA special state");
+        assert(ns == FullMatchState);
         if (reverse) {
           state->match_offset_ = state->base_offset_;
           state->flags_ |= State::kMatch;
@@ -677,7 +680,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
         return kContinueBackward;
       }
     } else { // match all the way to the end
-        assert(ns == FullMatchState && "invalid DFA special state");
+      assert(ns == FullMatchState);
       if (reverse) {
         state->match_offset_ = state->offset_;
         state->flags_ |= State::kMatch;
