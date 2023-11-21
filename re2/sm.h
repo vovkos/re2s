@@ -222,6 +222,9 @@ class RE2::SM {
 
   static ExecResult dfa_loop(DfaLoopParams* params);
 
+  // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
+  static void finalize_match(State* state, uint64_t chunk_end_offset, StringPiece chunk);
+
  private:
   Options options_;
   Kind kind_;
@@ -291,6 +294,9 @@ class RE2::SM::State {
   uint64_t match_length() const {
     return match_end_offset_ - match_offset_;
   }
+  StringPiece match_text() const {
+    return match_text_;
+  }
   int match_id() const {
     return match_id_;
   }
@@ -334,6 +340,7 @@ class RE2::SM::State {
   uint64_t eof_offset_;
   uint64_t match_offset_;
   uint64_t match_end_offset_;
+  StringPiece match_text_; // only when available
   int match_id_;
   int base_char_;
   int eof_char_;
@@ -356,6 +363,7 @@ inline void RE2::SM::State::reset(
   match_offset_ = -1;
   match_end_offset_ = -1;
   match_id_ = -1;
+  match_text_ = StringPiece();
   base_char_ = base_char;
   eof_char_ = eof_char;
   match_last_char_ = base_char;

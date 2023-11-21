@@ -55,7 +55,6 @@ int main() {
 
 	const char text[] = "ghi12\n \ndef34\n \nabc56";
 	size_t length = sizeof(text) - 1;
-	std::string match;
 
 	do {
 		printf("\nusing re2::RE2...\n");
@@ -89,17 +88,15 @@ int main() {
 		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
 		else {
-			match.assign(text + state.match_offset(), state.match_length());
-
 			printf(
 				"match id: %d at %zd:%zd '%s', \n",
 				state.match_id(),
 				state.match_offset(),
 				state.match_end_offset(),
-				match.c_str()
+				state.match_text().ToString().c_str()
 			);
 
-			print_re2_sm_submatches(sm, state.match_id(), match);
+			print_re2_sm_submatches(sm, state.match_id(), state.match_text());
 		}
 	} while (0);
 
@@ -123,19 +120,17 @@ int main() {
 		if (exec_result != re2::RE2::SM::kMatch)
 			printf("not found\n");
 		else {
-			match.assign(text + state.match_offset(), state.match_length());
-
 			printf(
 				"match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 				state.match_id(),
 				state.match_offset(),
 				state.match_end_offset(),
-				match.c_str(),
+				state.match_text().ToString().c_str(),
 				state.match_last_char(),
 				state.match_next_char()
 			);
 
-			print_re2_sm_submatches(sm, state.match_id(), match);
+			print_re2_sm_submatches(sm, state.match_id(), state.match_text());
 		}
 	} while (0);
 
@@ -192,18 +187,17 @@ int main() {
 				// fallthrough
 
 			case re2::RE2::SM::kMatch:
-				match.assign(text + state.match_offset(), state.match_length());
 				printf(
 					"+match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 					state.match_id(),
 					state.match_offset(),
 					state.match_end_offset(),
-					match.c_str(),
+					state.match_text().ToString().c_str(),
 					state.match_last_char(),
 					state.match_next_char()
 				);
 
-				print_re2_sm_submatches(sm, state.match_id(), match);
+				print_re2_sm_submatches(sm, state.match_id(), state.match_text());
 				printf("keep searching...\n");
 				p = text + state.match_end_offset();
 				break;
