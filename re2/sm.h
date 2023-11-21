@@ -92,8 +92,8 @@ class RE2::SM {
     init();
   }
 
-  SM(StringPiece pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED) {
-    init(), create(pattern, options, anchor);
+  SM(StringPiece pattern, const Options& options = RE2::DefaultOptions) {
+    init(), create(pattern, options);
   }
 
   ~SM() {
@@ -133,10 +133,6 @@ class RE2::SM {
     return options_;
   }
 
-  RE2::Anchor anchor() const {
-    return anchor_;
-  }
-
   size_t switch_case_count() {
     assert(kind_ == kRegexpSwitch && "invalid RE2::SM use (non-switch)");
     return switch_case_module_array_.size();
@@ -166,15 +162,15 @@ class RE2::SM {
 
   void clear();
 
-  bool create(StringPiece pattern, const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
+  bool create(StringPiece pattern, const Options& options = RE2::DefaultOptions);
 
-  void create_switch(const Options& options = RE2::DefaultOptions, RE2::Anchor anchor = RE2::UNANCHORED);
+  void create_switch(const Options& options = RE2::DefaultOptions);
   int add_switch_case(StringPiece pattern);
   bool finalize_switch();
 
   // execution
 
-  State exec(StringPiece text) const;
+  State exec(StringPiece text, RE2::Anchor anchor = RE2::UNANCHORED) const;
   ExecResult exec(State* state, StringPiece chunk) const;
   ExecResult eof(State* state, int eof_char = kByteEndText) const;
 
@@ -223,7 +219,6 @@ class RE2::SM {
  private:
   Options options_;
   Kind kind_;
-  RE2::Anchor anchor_;
   ErrorCode error_code_;
   std::string error_;
   std::string error_arg_;
@@ -238,24 +233,30 @@ class RE2::SM::State {
 
  protected:
    enum Flags {
-     kReverse        = 0x0001, // revere DFA scan to find the start of a match
-     kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
-     kAnchored       = 0x0010, // anchored search
-     kInitialized    = 0x0020, // state is initialized
-     kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
-     kMatch          = 0x0100, // post match; will auto-restart on the next exec
-     kInvalid        = 0x0200, // post error or mismatch; needs a manual reset
+     kReverse        = 0x000001, // revere DFA scan to find the start of a match
+     kCanPrefixAccel = 0x000002, // can use memchr to fast-forward to a potential match
+     kAnchored       = 0x000010, // anchored search
+     kInitialized    = 0x000020, // state is initialized
+     kFullMatch      = 0x000040, // in this state, DFA matches all the way to the very end
+     kMatch          = 0x000100, // post match; will auto-restart on the next exec
+     kInvalid        = 0x000200, // post error or mismatch; needs a manual reset
    };
 
  public:
-  State() {
-    reset();
+  State(RE2::Anchor anchor = RE2::UNANCHORED) {
+    reset(anchor);
   }
-  State(uint64_t base_offset, int base_char) {
-    reset(base_offset, base_char);
+  State(RE2::Anchor anchor, uint64_t base_offset, int base_char) {
+    reset(anchor, base_offset, base_char);
   }
-  State(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char = kByteEndText) {
-    reset(base_offset, base_char, eof_offset, eof_char);
+  State(
+    RE2::Anchor anchor,
+    uint64_t base_offset,
+    int base_char,
+    uint64_t eof_offset,
+    int eof_char = kByteEndText
+  ) {
+    reset(anchor, base_offset, base_char, eof_offset, eof_char);
   }
 
   operator bool () const {
@@ -264,6 +265,10 @@ class RE2::SM::State {
 
   bool is_match() const {
     return (flags_ & kMatch) != 0;
+  }
+
+  RE2::Anchor anchor() const {
+    return anchor_;
   }
   uint64_t base_offset() const {
     return base_offset_;
@@ -297,13 +302,19 @@ class RE2::SM::State {
     return match_next_char_;
   }
 
-  void reset() {
-    reset(0, kByteEndText, -1, kByteEndText);
+  void reset(RE2::Anchor anchor = RE2::UNANCHORED) {
+    reset(anchor, 0, kByteEndText, -1, kByteEndText);
   }
-  void reset(uint64_t base_offset, int base_char) {
-    reset(base_offset, base_char, -1, kByteEndText);
+  void reset(RE2::Anchor anchor, uint64_t base_offset, int base_char) {
+    reset(anchor, base_offset, base_char, -1, kByteEndText);
   }
-  void reset(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char = kByteEndText);
+  void reset(
+    RE2::Anchor anchor,
+    uint64_t base_offset,
+    int base_char,
+    uint64_t eof_offset,
+    int eof_char = kByteEndText
+  );
 
   void set_eof(uint64_t offset, int eof_char = kByteEndText);
 
@@ -311,31 +322,39 @@ class RE2::SM::State {
   DFA* dfa_;
   void* dfa_state_;       // DFA::State*
   void* dfa_start_state_; // DFA::State*
+  RE2::Anchor anchor_;
   uint64_t offset_;
   uint64_t base_offset_;
   uint64_t eof_offset_;
   uint64_t match_offset_;
   uint64_t match_end_offset_;
   int match_id_;
-  int flags_;
   int base_char_;
   int eof_char_;
   int match_last_char_;
   int match_next_char_;
+  int flags_;
 };
 
-inline void RE2::SM::State::reset(uint64_t base_offset, int base_char, uint64_t eof_offset, int eof_char) {
+inline void RE2::SM::State::reset(
+  RE2::Anchor anchor,
+  uint64_t base_offset,
+  int base_char,
+  uint64_t eof_offset,
+  int eof_char
+) {
   offset_ = base_offset;
   base_offset_ = base_offset;
   eof_offset_ = eof_offset;
+  anchor_ = anchor;
   match_offset_ = -1;
   match_end_offset_ = -1;
   match_id_ = -1;
-  flags_ = 0;
   base_char_ = base_char;
   eof_char_ = eof_char;
   match_last_char_ = base_char;
   match_next_char_ = eof_char;
+  flags_ = 0;
 }
 
 inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
@@ -345,8 +364,8 @@ inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
   eof_char = eof_char;
 }
 
-inline RE2::SM::State RE2::SM::exec(StringPiece text) const {
-  State state;
+inline RE2::SM::State RE2::SM::exec(StringPiece text, RE2::Anchor anchor) const {
+  State state(anchor);
   state.set_eof(text.length());
   exec(&state, text);
   return state;

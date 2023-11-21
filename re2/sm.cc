@@ -57,7 +57,7 @@ void RE2::SM::clear() {
   error_.clear();
   error_arg_.clear();
   options_ = RE2::DefaultOptions;
-  anchor_ = RE2::UNANCHORED;
+  kind_ = kUninitialized;
 
   for (intptr_t i = switch_case_module_array_.size() - 1; i >= 0; i--)
     delete switch_case_module_array_[i];
@@ -67,7 +67,6 @@ void RE2::SM::clear() {
 
 void RE2::SM::init() {
   kind_ = kUninitialized;
-  anchor_ = RE2::UNANCHORED;
   rprog_ = NULL;
   error_code_ = NoError;
 }
@@ -145,12 +144,11 @@ re2::Regexp* RE2::SM::append_regexp_match_id(re2::Regexp* regexp, int match_id) 
   return regexp;
 }
 
-bool RE2::SM::create(StringPiece pattern, const Options& options, RE2::Anchor anchor) {
+bool RE2::SM::create(StringPiece pattern, const Options& options) {
   clear();
 
   kind_ = kSingleRegexp;
   options_ = options;
-  anchor_ = anchor;
 
   return
     parse_module(&main_module_, pattern) &&
@@ -158,12 +156,11 @@ bool RE2::SM::create(StringPiece pattern, const Options& options, RE2::Anchor an
     compile_rprog();
 }
 
-void RE2::SM::create_switch(const Options& options, RE2::Anchor anchor) {
+void RE2::SM::create_switch(const Options& options) {
   clear();
 
   kind_ = kRegexpSwitch;
   options_ = options;
-  anchor_ = anchor;
 }
 
 int RE2::SM::add_switch_case(StringPiece pattern) {
@@ -267,7 +264,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   );
 
   if (state->flags_ & State::kMatch) // restart after match
-    state->reset(state->match_end_offset_, state->match_last_char_, state->eof_offset_, state->eof_char_);
+    state->reset(state->anchor_, state->match_end_offset_, state->match_last_char_, state->eof_offset_, state->eof_char_);
 
   if (state->flags_ & State::kReverse) { // reverse scan state
     if (state->offset_ > state->match_end_offset_) { // overshoot
@@ -317,13 +314,17 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     if (exec_result != kContinueBackward)
       return exec_result;
   } else {
-    if (prog->anchor_start() || anchor_)
+    if (prog->anchor_start() || state->anchor_)
       state->flags_ |= State::kAnchored;
 
     // we want a match_id, so we never skip the forward scan even if it has the end anchor
 
-    Prog::MatchKind kind = options_.longest_match() ? Prog::kLongestMatch : Prog::kFirstMatch;
-    state->dfa_ = prog->GetDFA(kind);
+    Prog::MatchKind progKind =
+      state->anchor_ == RE2::ANCHOR_BOTH ? Prog::kFullMatch :
+      options_.longest_match() ? Prog::kLongestMatch :
+      Prog::kFirstMatch;
+
+    state->dfa_ = prog->GetDFA(progKind);
     state->dfa_->want_match_id_ = true;
 
     DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
