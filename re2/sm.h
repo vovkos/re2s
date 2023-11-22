@@ -242,13 +242,13 @@ class RE2::SM::State {
 
  protected:
    enum Flags {
-     kReverse        = 0x000001, // revere DFA scan to find the start of a match
-     kCanPrefixAccel = 0x000002, // can use memchr to fast-forward to a potential match
-     kAnchored       = 0x000010, // anchored search
-     kInitialized    = 0x000020, // state is initialized
-     kFullMatch      = 0x000040, // in this state, DFA matches all the way to the very end
-     kMatch          = 0x000100, // post match; will auto-restart on the next exec
-     kInvalid        = 0x000200, // post error or mismatch; needs a manual reset
+     kReverse        = 0x0001, // revere DFA scan to find the start of a match
+     kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
+     kAnchored       = 0x0010, // anchored search
+     kInitialized    = 0x0020, // state is initialized
+     kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
+     kMatch          = 0x0100, // post match; will auto-restart on the next exec
+     kInvalid        = 0x0200, // post error or mismatch; needs a manual reset
    };
 
  public:
@@ -275,6 +275,9 @@ class RE2::SM::State {
   bool is_match() const {
     return (flags_ & kMatch) != 0;
   }
+  bool has_match_text() const {
+    return match_text_.data() != NULL;
+  }
 
   RE2::Anchor anchor() const {
     return anchor_;
@@ -286,15 +289,18 @@ class RE2::SM::State {
     return eof_offset_;
   }
   uint64_t match_offset() const {
+    assert(is_match());
     return match_offset_;
   }
   uint64_t match_end_offset() const {
     return match_end_offset_;
   }
   uint64_t match_length() const {
+    assert(is_match());
     return match_end_offset_ - match_offset_;
   }
   StringPiece match_text() const {
+    assert(is_match() && has_match_text());
     return match_text_;
   }
   int match_id() const {
@@ -362,8 +368,8 @@ inline void RE2::SM::State::reset(
   anchor_ = anchor;
   match_offset_ = -1;
   match_end_offset_ = -1;
-  match_id_ = -1;
   match_text_ = StringPiece();
+  match_id_ = -1;
   base_char_ = base_char;
   eof_char_ = eof_char;
   match_last_char_ = base_char;
@@ -372,8 +378,8 @@ inline void RE2::SM::State::reset(
 }
 
 inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
-  assert(!(flags_ & kReverse) && "invalid eof on a reverse state");
-  assert(offset >= offset_ && "invalid eof offset");
+  assert(!(flags_ & kReverse) || (flags_ & kMatch)); // after match we still have kReverse
+  assert(offset >= offset_);
   eof_offset_ = offset;
   eof_char = eof_char;
 }
@@ -385,7 +391,7 @@ inline RE2::SM::State RE2::SM::exec(StringPiece text, RE2::Anchor anchor) const 
 }
 
 inline RE2::SM::ExecResult RE2::SM::exec_eof(State* state, StringPiece last_chunk, int eof_char) const {
-  state->set_eof(state->offset_, eof_char);
+  state->set_eof(state->offset_ + last_chunk.size(), eof_char);
   return exec(state, last_chunk);
 }
 
