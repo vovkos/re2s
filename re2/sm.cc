@@ -57,7 +57,7 @@ void RE2::SM::clear() {
   error_.clear();
   error_arg_.clear();
   options_ = RE2::DefaultOptions;
-  kind_ = kUninitialized;
+  kind_ = kUndefined;
 
   for (intptr_t i = switch_case_module_array_.size() - 1; i >= 0; i--)
     delete switch_case_module_array_[i];
@@ -66,7 +66,7 @@ void RE2::SM::clear() {
 }
 
 void RE2::SM::init() {
-  kind_ = kUninitialized;
+  kind_ = kUndefined;
   rprog_ = NULL;
   error_code_ = NoError;
 }
@@ -258,7 +258,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   assert(
     ok() &&
     !(state->flags_ & State::kInvalid) &&
-    kind_ != kUninitialized
+    kind_ != kUndefined
   );
 
   if (!chunk.data()) {

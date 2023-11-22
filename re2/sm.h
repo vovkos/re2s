@@ -78,7 +78,7 @@ class RE2::SM {
   };
 
   enum Kind {
-    kUninitialized,
+    kUndefined,
     kSingleRegexp,
     kRegexpSwitch,
   };
