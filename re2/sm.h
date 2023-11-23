@@ -339,7 +339,10 @@ class RE2::SM::State {
     int eof_char = kByteEndText
   );
 
-  void set_eof(uint64_t offset, int eof_char = kByteEndText);
+  void set_eof_offset(uint64_t offset, int eof_char = kByteEndText);
+  void set_eof(int eof_char = kByteEndText) {
+    set_eof_offset(offset_, eof_char);
+  }
 
  protected:
   // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
@@ -388,7 +391,7 @@ inline void RE2::SM::State::reset(
   state_flags_ = 0;
 }
 
-inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
+inline void RE2::SM::State::set_eof_offset(uint64_t offset, int eof_char) {
   assert(!(state_flags_ & kReverse) || (state_flags_ & kMatch)); // after match we still have kReverse
   assert(offset >= offset_);
   eof_offset_ = offset;
@@ -402,7 +405,7 @@ inline RE2::SM::State RE2::SM::exec(StringPiece text, int exec_flags) const {
 }
 
 inline RE2::SM::ExecResult RE2::SM::exec_eof(State* state, StringPiece last_chunk, int eof_char) const {
-  state->set_eof(state->offset_ + last_chunk.size(), eof_char);
+  state->set_eof_offset(state->offset_ + last_chunk.size(), eof_char);
   return exec(state, last_chunk);
 }
 

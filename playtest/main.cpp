@@ -82,7 +82,7 @@ int main() {
 		}
 
 		re2::RE2::SM::State state;
-		state.set_eof(length);
+		state.set_eof_offset(length);
 
 		re2::RE2::SM::ExecResult exec_result = sm.exec(&state, text);
 		if (exec_result != re2::RE2::SM::kMatch)
@@ -114,7 +114,7 @@ int main() {
 		}
 
 		re2::RE2::SM::State state;
-		state.set_eof(length);
+		state.set_eof_offset(length);
 
 		re2::RE2::SM::ExecResult exec_result = sm.exec(&state, text);
 		if (exec_result != re2::RE2::SM::kMatch)
@@ -148,7 +148,7 @@ int main() {
 		}
 
 		re2::RE2::SM::State state;
-		state.set_eof(length);
+		state.set_eof_offset(length);
 
 		const char* p = text;
 		const char* eof = text + length;
