@@ -71,7 +71,7 @@ class RE2::SM {
   enum ExecFlags {
     kAnchorStart        = 0x01, // = RE2::ANCHOR_START
     kFullMatch          = 0x02, // = RE2::ANCHOR_BOTH
-    kMatchEndOffsetOnly = 0x04, // no need to go all the way back to the match start
+    kMatchEndOffsetOnly = 0x04, // no need to run the reverse DFA to find the match start
   };
 
   enum ExecResult {
@@ -229,7 +229,7 @@ class RE2::SM {
   static ExecResult dfa_loop(DfaLoopParams* params);
 
   // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
-  static void finalize_match(State* state, uint64_t chunk_end_offset, StringPiece chunk);
+  static inline void finalize_match(State* state, uint64_t chunk_end_offset, StringPiece chunk);
 
  private:
   Options options_;
@@ -275,12 +275,7 @@ class RE2::SM::State {
     return is_match();
   }
 
-  bool is_match() const {
-    return (state_flags_ & kMatch) != 0;
-  }
-  bool has_match_text() const {
-    return match_text_.data() != NULL;
-  }
+  // properties
 
   int exec_flags() const {
     return exec_flags_;
@@ -288,8 +283,32 @@ class RE2::SM::State {
   uint64_t base_offset() const {
     return base_offset_;
   }
+  int base_char() const {
+    return base_char_;
+  }
   uint64_t eof_offset() const {
     return eof_offset_;
+  }
+  int eof_char() const {
+    return eof_char_;
+  }
+
+  // these two are for testing & debugging
+
+  int match_last_char() const {
+    return match_last_char_;
+  }
+  int match_next_char() const {
+    return match_next_char_;
+  }
+
+  // match info
+
+  bool is_match() const {
+    return (state_flags_ & kMatch) != 0;
+  }
+  bool has_match_text() const {
+    return match_text_.data() != NULL;
   }
   uint64_t match_offset() const {
     assert(is_match());
@@ -310,18 +329,7 @@ class RE2::SM::State {
     return match_id_;
   }
 
-  int base_char() const {
-    return base_char_;
-  }
-  int eof_char() const {
-    return eof_char_;
-  }
-  int match_last_char() const {
-    return match_last_char_;
-  }
-  int match_next_char() const {
-    return match_next_char_;
-  }
+  // state setup
 
   void reset(int exec_flags = 0) {
     reset(exec_flags, 0, kByteEndText, -1, kByteEndText);
@@ -351,6 +359,7 @@ class RE2::SM::State {
   int eof_char_;
   int match_last_char_;
   int match_next_char_;
+  int last_char_;
   int exec_flags_  : 2;
   int state_flags_ : 2;
 };
@@ -373,6 +382,7 @@ inline void RE2::SM::State::reset(
   eof_char_ = eof_char;
   match_last_char_ = base_char;
   match_next_char_ = eof_char;
+  last_char_ = base_char;
   exec_flags_ = exec_flags;
   state_flags_ = 0;
 }
