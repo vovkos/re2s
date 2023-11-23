@@ -228,9 +228,6 @@ class RE2::SM {
 
   static ExecResult dfa_loop(DfaLoopParams* params);
 
-  // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
-  static inline void finalize_match(State* state, uint64_t chunk_end_offset, StringPiece chunk);
-
  private:
   Options options_;
   Kind kind_;
@@ -253,7 +250,7 @@ class RE2::SM::State {
      kAnchored       = 0x0010, // anchored search
      kInitialized    = 0x0020, // state is initialized
      kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
-     kMatch          = 0x0100, // post match; will auto-restart on the next exec
+     kMatchReady     = 0x0100, // post match; will auto-restart on the next exec
      kInvalid        = 0x0200, // post error or mismatch; needs a manual reset
    };
 
@@ -344,6 +341,10 @@ class RE2::SM::State {
 
   void set_eof(uint64_t offset, int eof_char = kByteEndText);
 
+ protected:
+  // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
+  void finalize_match(uint64_t chunk_end_offset, StringPiece chunk);
+
  private:
   DFA* dfa_;
   void* dfa_state_;       // DFA::State*
@@ -360,8 +361,8 @@ class RE2::SM::State {
   int match_last_char_;
   int match_next_char_;
   int last_char_;
-  int exec_flags_  : 2;
-  int state_flags_ : 2;
+  int exec_flags_  : 16;
+  int state_flags_ : 16;
 };
 
 inline void RE2::SM::State::reset(

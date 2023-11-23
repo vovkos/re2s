@@ -266,7 +266,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     chunk = StringPiece("", 0); // make sure we don't pass NULL pointers to dfa_loop
   }
 
-  if (state->state_flags_ & State::kMatch) // restart after match
+  if (state->state_flags_ & State::kMatchReady) // restart after match
     state->reset(
       state->exec_flags_,
       state->match_end_offset_,
@@ -354,11 +354,11 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   // reverse scan
 
-  assert(state->match_end_offset_ != -1);
+  assert(state->match_end_offset_ != -1 && state->match_id_ != -1);
 
   if (state->exec_flags_ & kMatchEndOffsetOnly) { // shortcut -- no need to find the match start
     state->match_offset_ = state->match_end_offset_;
-    state->state_flags_ |= State::kMatch;
+    state->state_flags_ |= State::kMatchReady;
     return kMatch;
   }
 
@@ -576,7 +576,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
             return kErrorInconsistent;
           }
 
-          finalize_match(state, chunk_end_offset, params->chunk);
+          state->finalize_match(chunk_end_offset, params->chunk);
           return kMatch;
         } else {
           if (lastmatch) {
@@ -599,7 +599,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
         assert(ns == FullMatchState);
         if (reverse) {
           state->match_offset_ = state->base_offset_;
-          finalize_match(state, chunk_end_offset, params->chunk);
+          state->finalize_match(chunk_end_offset, params->chunk);
           return kMatch;
         } else {
           assert(lastmatch_state); // the state leading to FullMatchState is always a matching state
@@ -694,7 +694,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           return kErrorInconsistent;
         }
 
-        finalize_match(state, chunk_end_offset, params->chunk);
+        state->finalize_match(chunk_end_offset, params->chunk);
         return kMatch;
       } else {
         if (state->match_end_offset_ == -1) {
@@ -708,7 +708,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       assert(ns == FullMatchState);
       if (reverse) {
         state->match_offset_ = state->base_offset_;
-        finalize_match(state, chunk_end_offset, params->chunk);
+        state->finalize_match(chunk_end_offset, params->chunk);
         return kMatch;
       } else {
         assert(lastmatch_state); // the state leading to FullMatchState is always a matching state
@@ -724,7 +724,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   if (ns->IsMatch()) {
     if (reverse) {
       state->match_offset_ = state->offset_;
-      finalize_match(state, chunk_end_offset, params->chunk);
+      state->finalize_match(chunk_end_offset, params->chunk);
       return kMatch;
     } else {
       state->match_id_ = ns->MatchId();
@@ -741,7 +741,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       return kErrorInconsistent;
     }
 
-    finalize_match(state, chunk_end_offset, params->chunk);
+    state->finalize_match(chunk_end_offset, params->chunk);
     return kMatch;
   } else {
     if (state->match_end_offset_ == -1) {
@@ -781,12 +781,12 @@ RE2::SM::ExecResult RE2::SM::dfa_loop(DfaLoopParams* params) {
   return funcTable[i](params);
 }
 
-inline void RE2::SM::finalize_match(State* state, uint64_t chunk_end_offset, StringPiece chunk) {
-  assert(state->match_offset_ != -1 && state->match_end_offset_ != -1);
-  state->state_flags_ |= State::kMatch;
+void RE2::SM::State::finalize_match(uint64_t chunk_end_offset, StringPiece chunk) {
+  assert(match_offset_ != -1 && match_end_offset_ != -1);
+  state_flags_ |= State::kMatchReady;
   uint64_t chunk_offset = chunk_end_offset - chunk.length();
-  if (state->match_offset_ >= chunk_offset && state->match_end_offset_ <= chunk_end_offset)
-    state->match_text_ = StringPiece(chunk.data() + state->match_offset_ - chunk_offset, state->match_length());
+  if (match_offset_ >= chunk_offset && match_end_offset_ <= chunk_end_offset)
+    match_text_ = StringPiece(chunk.data() + match_offset_ - chunk_offset, match_length());
 }
 
 }  // namespace re2
