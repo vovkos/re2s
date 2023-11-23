@@ -68,6 +68,12 @@ class RE2::SM {
  public:
   class State;
 
+  enum ExecFlags {
+    kAnchorStart        = 0x01, // = RE2::ANCHOR_START
+    kFullMatch          = 0x02, // = RE2::ANCHOR_BOTH
+    kMatchEndOffsetOnly = 0x04, // no need to go all the way back to the match start
+  };
+
   enum ExecResult {
 	  kErrorInconsistent = -2, // reverse scan couldn't find a match (inconsistent data)
 	  kErrorOutOfMemory  = -1, // DFA run out-of-memory
@@ -170,7 +176,7 @@ class RE2::SM {
 
   // execution (single block of text)
 
-  State exec(StringPiece text, RE2::Anchor anchor = RE2::UNANCHORED) const;
+  State exec(StringPiece text, int exec_flags = 0) const;
 
   // execution (stream matcher interface)
 
@@ -241,7 +247,7 @@ class RE2::SM::State {
   friend class RE2::SM;
 
  protected:
-   enum Flags {
+   enum StateFlags {
      kReverse        = 0x0001, // revere DFA scan to find the start of a match
      kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
      kAnchored       = 0x0010, // anchored search
@@ -252,20 +258,17 @@ class RE2::SM::State {
    };
 
  public:
-  State(RE2::Anchor anchor = RE2::UNANCHORED) {
-    reset(anchor);
-  }
-  State(RE2::Anchor anchor, uint64_t base_offset, int base_char) {
-    reset(anchor, base_offset, base_char);
+  State(int exec_flags = 0) { // ExecFlags
+    reset(exec_flags);
   }
   State(
-    RE2::Anchor anchor,
+    int exec_flags,
     uint64_t base_offset,
     int base_char,
-    uint64_t eof_offset,
+    uint64_t eof_offset = -1,
     int eof_char = kByteEndText
   ) {
-    reset(anchor, base_offset, base_char, eof_offset, eof_char);
+    reset(exec_flags, base_offset, base_char, eof_offset, eof_char);
   }
 
   operator bool () const {
@@ -273,14 +276,14 @@ class RE2::SM::State {
   }
 
   bool is_match() const {
-    return (flags_ & kMatch) != 0;
+    return (state_flags_ & kMatch) != 0;
   }
   bool has_match_text() const {
     return match_text_.data() != NULL;
   }
 
-  RE2::Anchor anchor() const {
-    return anchor_;
+  int exec_flags() const {
+    return exec_flags_;
   }
   uint64_t base_offset() const {
     return base_offset_;
@@ -320,17 +323,14 @@ class RE2::SM::State {
     return match_next_char_;
   }
 
-  void reset(RE2::Anchor anchor = RE2::UNANCHORED) {
-    reset(anchor, 0, kByteEndText, -1, kByteEndText);
-  }
-  void reset(RE2::Anchor anchor, uint64_t base_offset, int base_char) {
-    reset(anchor, base_offset, base_char, -1, kByteEndText);
+  void reset(int exec_flags = 0) {
+    reset(exec_flags, 0, kByteEndText, -1, kByteEndText);
   }
   void reset(
-    RE2::Anchor anchor,
+    int exec_flags,
     uint64_t base_offset,
     int base_char,
-    uint64_t eof_offset,
+    uint64_t eof_offset = -1,
     int eof_char = kByteEndText
   );
 
@@ -340,7 +340,6 @@ class RE2::SM::State {
   DFA* dfa_;
   void* dfa_state_;       // DFA::State*
   void* dfa_start_state_; // DFA::State*
-  RE2::Anchor anchor_;
   uint64_t offset_;
   uint64_t base_offset_;
   uint64_t eof_offset_;
@@ -352,11 +351,12 @@ class RE2::SM::State {
   int eof_char_;
   int match_last_char_;
   int match_next_char_;
-  int flags_;
+  int exec_flags_  : 2;
+  int state_flags_ : 2;
 };
 
 inline void RE2::SM::State::reset(
-  RE2::Anchor anchor,
+  int exec_flags,
   uint64_t base_offset,
   int base_char,
   uint64_t eof_offset,
@@ -365,7 +365,6 @@ inline void RE2::SM::State::reset(
   offset_ = base_offset;
   base_offset_ = base_offset;
   eof_offset_ = eof_offset;
-  anchor_ = anchor;
   match_offset_ = -1;
   match_end_offset_ = -1;
   match_text_ = StringPiece();
@@ -374,18 +373,19 @@ inline void RE2::SM::State::reset(
   eof_char_ = eof_char;
   match_last_char_ = base_char;
   match_next_char_ = eof_char;
-  flags_ = 0;
+  exec_flags_ = exec_flags;
+  state_flags_ = 0;
 }
 
 inline void RE2::SM::State::set_eof(uint64_t offset, int eof_char) {
-  assert(!(flags_ & kReverse) || (flags_ & kMatch)); // after match we still have kReverse
+  assert(!(state_flags_ & kReverse) || (state_flags_ & kMatch)); // after match we still have kReverse
   assert(offset >= offset_);
   eof_offset_ = offset;
   eof_char = eof_char;
 }
 
-inline RE2::SM::State RE2::SM::exec(StringPiece text, RE2::Anchor anchor) const {
-  State state(anchor);
+inline RE2::SM::State RE2::SM::exec(StringPiece text, int exec_flags) const {
+  State state(exec_flags);
   exec_eof(&state, text);
   return state;
 }
