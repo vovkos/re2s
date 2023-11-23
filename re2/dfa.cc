@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #include <algorithm>
 #include <deque>
 #include <mutex>
