@@ -324,8 +324,8 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     if (exec_result != kContinueBackward)
       return exec_result;
   } else {
-    if (prog->anchor_start() || (state->exec_flags_ & (kAnchorStart | kFullMatch)))
-      state->state_flags_ |= State::kAnchored;
+    if (prog->anchor_start() || (state->exec_flags_ & (kAnchored | kFullMatch)))
+      state->state_flags_ |= State::kStartAnchored;
 
     // we want a match_id, so we never skip the forward scan even if it has the end anchor
 
@@ -356,14 +356,14 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   assert(state->match_end_offset_ != -1 && state->match_id_ != -1);
 
-  if (state->exec_flags_ & kMatchEndOffsetOnly) { // shortcut -- no need to find the match start
+  if (state->exec_flags_ & kEndOffsetOnly) { // shortcut -- no need to find the match start
     state->match_offset_ = state->match_end_offset_;
     state->state_flags_ |= State::kMatchReady;
     return kMatch;
   }
 
   state->dfa_ = rprog_->GetDFA(Prog::kLongestMatch);
-  state->state_flags_ = State::kReverse | State::kAnchored | State::kInitialized;
+  state->state_flags_ = State::kReverse | State::kStartAnchored | State::kInitialized;
 
   DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
   SelectDfaStartStateParams select_start_params(state, &cache_lock);
@@ -422,7 +422,7 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
     }
   }
 
-  if (state->state_flags_ & State::kAnchored)
+  if (state->state_flags_ & State::kStartAnchored)
     start |= DFA::kStartAnchored;
 
   DFA::StartInfo* info = &dfa->start_[start];
@@ -449,7 +449,7 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
   if (
     dfa->prog_->can_prefix_accel() &&
     !dfa->prog_->prefix_foldcase() &&
-    !(state->state_flags_ & State::kAnchored) &&
+    !(state->state_flags_ & State::kStartAnchored) &&
     start_state > SpecialStateMax &&
     start_state->flag_ >> DFA::kFlagNeedShift == 0
   )
@@ -477,7 +477,9 @@ bool RE2::SM::select_dfa_start_state_impl(SelectDfaStartStateParams* params) {
   dfa->q0_->clear();
   dfa->AddToQueue(
     dfa->q0_,
-    (state->state_flags_ & State::kAnchored) ? state->dfa_->prog_->start() : state->dfa_->prog_->start_unanchored(),
+    (state->state_flags_ & State::kStartAnchored) ?
+      state->dfa_->prog_->start() :
+      state->dfa_->prog_->start_unanchored(),
     params->flags
   );
 

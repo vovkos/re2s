@@ -69,9 +69,9 @@ class RE2::SM {
   class State;
 
   enum ExecFlags {
-    kAnchorStart        = 0x01, // = RE2::ANCHOR_START
-    kFullMatch          = 0x02, // = RE2::ANCHOR_BOTH
-    kMatchEndOffsetOnly = 0x04, // no need to run the reverse DFA to find the match start
+    kAnchored      = 0x01, // = RE2::ANCHOR_START
+    kFullMatch     = 0x02, // = RE2::ANCHOR_BOTH
+    kEndOffsetOnly = 0x04, // no need to run the reverse DFA to find the match start
   };
 
   enum ExecResult {
@@ -247,7 +247,7 @@ class RE2::SM::State {
    enum StateFlags {
      kReverse        = 0x0001, // revere DFA scan to find the start of a match
      kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
-     kAnchored       = 0x0010, // anchored search
+     kStartAnchored  = 0x0010, // anchored search
      kInitialized    = 0x0020, // state is initialized
      kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
      kMatchReady     = 0x0100, // post match; will auto-restart on the next exec
