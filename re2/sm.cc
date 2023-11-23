@@ -41,7 +41,7 @@ bool RE2::SM::Module::capture_submatches(
     nsubmatches = capture_count_ + 1;
 
   bool can_one_pass = prog_->IsOnePass() && nsubmatches <= Prog::kMaxOnePassCapture;
-  bool can_bit_state = prog_->CanBitState() && match.size() <= prog_->bit_state_text_max_size();
+  bool can_bit_state = prog_->CanBitState() && match.length() <= prog_->bit_state_text_max_size();
 
   return
     can_one_pass ? prog_->SearchOnePass(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches) :
@@ -262,7 +262,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   );
 
   if (!chunk.data()) {
-    assert(chunk.size() == 0);
+    assert(chunk.length() == 0);
     chunk = StringPiece("", 0); // make sure we don't pass NULL pointers to dfa_loop
   }
 
@@ -278,19 +278,19 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   if (state->state_flags_ & State::kReverse) { // reverse scan state
     if (state->offset_ > state->match_end_offset_) { // overshoot
       uint64_t overshoot_size = state->offset_ - state->match_end_offset_;
-      if (overshoot_size > chunk.size()) {
-        state->offset_ -= chunk.size();
+      if (overshoot_size > chunk.length()) {
+        state->offset_ -= chunk.length();
         return kContinueBackward;
       }
 
       state->offset_ = state->match_end_offset_;
-      state->match_next_char_ = (uint8_t)chunk[chunk.size() - overshoot_size];
+      state->match_next_char_ = (uint8_t)chunk[chunk.length() - overshoot_size];
       chunk.remove_suffix(overshoot_size);
     }
 
     uint64_t leftover_size = state->offset_ - state->base_offset_;
-    if (leftover_size < chunk.size()) // don't go beyond base_offset
-      chunk = StringPiece(chunk.data() + chunk.size() - leftover_size, leftover_size);
+    if (leftover_size < chunk.length()) // don't go beyond base_offset
+      chunk = StringPiece(chunk.data() + chunk.length() - leftover_size, leftover_size);
 
     DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
     DfaLoopParams loop_params(state, &cache_lock, chunk);
@@ -327,11 +327,8 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     if (prog->anchor_start() || (state->exec_flags_ & (kAnchored | kFullMatch)))
       state->state_flags_ |= State::kStartAnchored;
 
-    // we want a match_id, so we never skip the forward scan even if it has the end anchor
-
-    Prog::MatchKind progKind =
-      (state->exec_flags_ & kFullMatch) ? Prog::kFullMatch :
-      options_.longest_match() ? Prog::kLongestMatch :
+    Prog::MatchKind progKind = options_.longest_match() || (state->exec_flags_ & kFullMatch) ?
+      Prog::kLongestMatch :
       Prog::kFirstMatch;
 
     state->dfa_ = prog->GetDFA(progKind);
@@ -356,7 +353,24 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   assert(state->match_end_offset_ != -1 && state->match_id_ != -1);
 
-  if (state->exec_flags_ & kEndOffsetOnly) { // shortcut -- no need to find the match start
+  if (state->exec_flags_ & kFullMatch) {
+    uint64_t chunk_end_offset = prev_offset + chunk.length();
+
+    if (
+      state->match_end_offset_ < state->eof_offset_ || // eof_offset_ is not precise, so also
+      state->match_end_offset_ != chunk_end_offset // check the "real" eof offset
+    ) {
+      state->state_flags_ |= State::kInvalid;
+      return kMismatch;
+    }
+
+    // we did an anchored search, so we know where the match starts
+    state->match_offset_ = state->base_offset_;
+    state->finalize_match(chunk_end_offset, chunk);
+    return kMatch;
+  }
+
+  if (state->exec_flags_ & kEndOffsetOnly) { // we only want the match end offset -- no need to scan back
     state->match_offset_ = state->match_end_offset_;
     state->state_flags_ |= State::kMatchReady;
     return kMatch;
@@ -378,7 +392,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   }
 
   size_t prefix_size = state->match_end_offset_ - prev_offset;
-  assert(prefix_size <= chunk.size());
+  assert(prefix_size <= chunk.length());
   state->offset_ = state->match_end_offset_;
 
   DfaLoopParams loop_params(state, &cache_lock, StringPiece(chunk.data(), prefix_size));

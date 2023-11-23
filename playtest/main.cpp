@@ -46,6 +46,31 @@ int main() {
 	options.set_case_sensitive(false);
 	options.set_multi_line(true);
 
+	do {
+		printf("\nchecking full-match\n");
+
+		const char pattern[] = "abc";
+		const char text[] = "abcd";
+
+		printf("RE2:\n");
+
+		re2::RE2 re(pattern);
+		bool result = RE2::FullMatch(text, re);
+		if (!result)
+			printf("not found\n");
+		else
+			printf("match!\n");
+
+		printf("RE2::SM:\n");
+
+		re2::RE2::SM sm(pattern);
+		re2::RE2::SM::State state = sm.exec(text, re2::RE2::SM::kFullMatch);
+		if (!state)
+			printf("not found\n");
+		else
+			printf("match at %lld:%lld '%s'\n", state.match_offset(), state.match_end_offset(), state.match_text().ToString().c_str());
+	} while (0);
+
 	const char single_pattern[] = "^abc(\\d+)$";
 	const char* switch_patterns[] = {
 		"^abc(\\d+)$",
@@ -62,7 +87,7 @@ int main() {
 		re2::RE2 re(std::string("(") + single_pattern + ")");
 		re2::StringPiece match;
 		re2::StringPiece submatch;
-		bool result = re.RE2::PartialMatch(text, re, &match, &submatch);
+		bool result = RE2::PartialMatch(text, re, &match, &submatch);
 		if (!result)
 			printf("not found\n");
 		else {

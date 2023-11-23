@@ -302,7 +302,7 @@ class RE2::SM::State {
   // match info
 
   bool is_match() const {
-    return (state_flags_ & kMatch) != 0;
+    return (state_flags_ & kMatchReady) != 0;
   }
   bool has_match_text() const {
     return match_text_.data() != NULL;
@@ -375,6 +375,9 @@ inline void RE2::SM::State::reset(
   uint64_t eof_offset,
   int eof_char
 ) {
+  dfa_ = NULL;
+  dfa_state_ = NULL;
+  dfa_start_state_ = NULL;
   offset_ = base_offset;
   base_offset_ = base_offset;
   eof_offset_ = eof_offset;
@@ -392,7 +395,7 @@ inline void RE2::SM::State::reset(
 }
 
 inline void RE2::SM::State::set_eof_offset(uint64_t offset, int eof_char) {
-  assert(!(state_flags_ & kReverse) || (state_flags_ & kMatch)); // after match we still have kReverse
+  assert(!(state_flags_ & kReverse) || (state_flags_ & kMatchReady)); // after match we still have kReverse
   assert(offset >= offset_);
   eof_offset_ = offset;
   eof_char = eof_char;
