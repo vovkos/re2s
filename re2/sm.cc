@@ -32,7 +32,7 @@ void RE2::SM::Module::clear() {
   pattern_.clear();
 }
 
-bool RE2::SM::Module::capture_submatches(
+size_t RE2::SM::Module::capture_submatches(
   StringPiece match,
   StringPiece* submatches,
   size_t nsubmatches
@@ -43,10 +43,12 @@ bool RE2::SM::Module::capture_submatches(
   bool can_one_pass = prog_->IsOnePass() && nsubmatches <= Prog::kMaxOnePassCapture;
   bool can_bit_state = prog_->CanBitState() && match.length() <= prog_->bit_state_text_max_size();
 
-  return
+  bool result =
     can_one_pass ? prog_->SearchOnePass(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches) :
     can_bit_state ? prog_->SearchBitState(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches) :
     prog_->SearchNFA(match, match, Prog::kAnchored, Prog::kFullMatch, submatches, (int)nsubmatches);
+
+  return result ? nsubmatches : -1;
 }
 
 void RE2::SM::clear() {

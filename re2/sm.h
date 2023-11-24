@@ -49,7 +49,7 @@ class RE2::SM {
 
     void clear();
 
-    bool capture_submatches(
+    size_t capture_submatches(
       StringPiece match,
       StringPiece* submatches,
       size_t nsubmatches
@@ -186,7 +186,7 @@ class RE2::SM {
     return exec_eof(state, StringPiece("", 0), eof_char);
   }
 
-  bool capture_submatches(
+  size_t capture_submatches(
     StringPiece match,
     StringPiece* submatches,
     size_t nsubmatches
@@ -195,7 +195,7 @@ class RE2::SM {
     return main_module_.capture_submatches(match, submatches, nsubmatches);
   }
 
-  bool capture_submatches(
+  size_t capture_submatches(
     int id,
     StringPiece match,
     StringPiece* submatches,
