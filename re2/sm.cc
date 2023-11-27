@@ -207,24 +207,20 @@ bool RE2::SM::finalize_switch() {
   int count = (int)switch_case_module_array_.size();
   PODArray<re2::Regexp*> sub(count);
   for (int i = 0; i < count; i++)
-    sub[i] = v[i]->regexp_->Incref(); // will be Decref-ed by the parent Regexp
+    sub[i] = v[i]->regexp_->Incref(); // will be Decref-ed by main_module_.regexp_
 
   re2::Regexp* prev_regexp = main_module_.regexp_;
-  main_module_.regexp_ = re2::Regexp::Alternate(sub.data(), count, flags);
-
+  main_module_.regexp_ = re2::Regexp::AlternateNoFactor(sub.data(), count, flags);
   bool result = compile_rprog();
-
-  main_module_.regexp_->Decref();
-  main_module_.regexp_ = NULL;
-
   if (!result)
     return false;
 
+  main_module_.regexp_->Decref();
+
   for (int i = 0; i < count; i++) {
     Module* module = v[i];
-    module->regexp_ = append_regexp_match_id(module->regexp_, module->match_id_);
-    module->regexp_->Incref(); // will be Decref-ed by the parent Regexp
-    sub[i] = module->regexp_;
+    sub[i] = append_regexp_match_id(module->regexp_, module->match_id_);
+    module->regexp_ = NULL; // after factoring Alternate below, this regexp can't be reused anyway
   }
 
   main_module_.regexp_ = re2::Regexp::Alternate(sub.data(), count, flags);
