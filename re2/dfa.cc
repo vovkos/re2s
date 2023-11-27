@@ -373,6 +373,8 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
 
       for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
         int id = *i;
+        if (mq->is_mark(id))
+          continue;
         Prog::Inst* ip = prog_->inst(id);
         if (ip->opcode() == kInstMatch && ip->match_id() < match_id)
           match_id = ip->match_id();
