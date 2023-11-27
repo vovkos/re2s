@@ -175,15 +175,15 @@ int main() {
 		re2::RE2::SM::State state;
 		state.set_eof_offset(length);
 
+		std::string match_text;
 		const char* p = text;
 		const char* eof = text + length;
 		while (p < eof) {
-			size_t chunk_length = 1;
-			re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p, chunk_length));
+			re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p, 1));
 			assert(result != re2::RE2::SM::kMatch);
 			switch (result) {
 			case re2::RE2::SM::kContinue:
-				p += chunk_length;
+				p++;
 				break;
 
 			case re2::RE2::SM::kMismatch:
@@ -194,10 +194,10 @@ int main() {
 				printf("end-of-match id: %d at %zd\n", state.match_id(), state.match_end_offset());
 
 				while (p > text) {
-					re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p - chunk_length, chunk_length));
+					re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p - 1, 1));
 					switch (result) {
 					case re2::RE2::SM::kContinueBackward:
-						p -= chunk_length;
+						p--;
 						break;
 
 					case re2::RE2::SM::kMatch:
@@ -212,17 +212,18 @@ int main() {
 				// fallthrough
 
 			case re2::RE2::SM::kMatch:
+				match_text = std::string(text + state.match_offset(), state.match_length());
 				printf(
-					"+match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
+					"match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
 					state.match_id(),
 					state.match_offset(),
 					state.match_end_offset(),
-					state.match_text().ToString().c_str(),
+					match_text.c_str(),
 					state.match_last_char(),
 					state.match_next_char()
 				);
 
-				print_re2_sm_submatches(sm, state.match_id(), state.match_text());
+				print_re2_sm_submatches(sm, state.match_id(), match_text);
 				printf("keep searching...\n");
 				p = text + state.match_end_offset();
 				break;
