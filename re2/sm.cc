@@ -355,18 +355,20 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   assert(state->match_end_offset_ != -1 && state->match_id_ != -1);
 
-  if (state->exec_flags_ & kFullMatch) {
+  if (state->exec_flags_ & (kAnchored | kFullMatch)) {
+    // we know where the match starts -- no need to scan back
     uint64_t chunk_end_offset = prev_offset + chunk.length();
 
     if (
-      state->match_end_offset_ < state->eof_offset_ || // eof_offset_ is not precise, so also
-      state->match_end_offset_ != chunk_end_offset // check the "real" eof offset
+      (state->exec_flags_ & kFullMatch) && (
+        state->match_end_offset_ < state->eof_offset_ || // eof_offset_ is not precise, so we
+        state->match_end_offset_ != chunk_end_offset     // also check the "real" eof offset
+      )
     ) {
       state->state_flags_ |= State::kInvalid;
       return kMismatch;
     }
 
-    // we did an anchored search, so we know where the match starts
     state->match_offset_ = state->base_offset_;
     state->finalize_match(chunk_end_offset, chunk);
     return kMatch;
