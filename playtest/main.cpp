@@ -71,6 +71,54 @@ int main() {
 			printf("match at %lld:%lld '%s'\n", state.match_offset(), state.match_end_offset(), state.match_text().ToString().c_str());
 	} while (0);
 
+	do {
+		printf("\nchecking switch with common prefixes\n");
+
+		const char* switch_patterns[] = {
+			"a1",
+			"b2",
+			"b3",
+		};
+
+		const char text[] = "b2";
+
+		printf("RE2::Set:\n");
+
+		std::string error;
+		re2::RE2::Set set(options, re2::RE2::ANCHOR_BOTH);
+
+		for (size_t i = 0; i < sizeof(switch_patterns) / sizeof(switch_patterns[0]); i++)
+			set.Add(switch_patterns[i], &error);
+
+		set.Compile();
+
+		std::vector<int> v;
+		bool result = set.Match(text, &v);
+		if (!result)
+			printf("not found\n");
+		else
+			printf("match id: %d\n", v[0]);
+
+		printf("RE2::SM:\n");
+
+		re2::RE2::SM sm;
+		sm.create_switch(options);
+		for (size_t i = 0; i < sizeof(switch_patterns) / sizeof(switch_patterns[0]); i++)
+			sm.add_switch_case(switch_patterns[i]);
+		result = sm.finalize_switch();
+    if (!result) {
+			printf("error: %s\n", sm.error().c_str());
+			return -1;
+		}
+
+		re2::RE2::SM::State state(re2::RE2::SM::kAnchored);
+		std::string match_text;
+		re2::RE2::SM::ExecResult exec_result = sm.exec_eof(&state, re2::StringPiece(text));
+		assert(exec_result == re2::RE2::SM::kMatch);
+
+		printf("match id: %d\n", state.match_id());
+	} while (0);
+
 	const char single_pattern[] = "^abc(\\d+)$";
 	const char* switch_patterns[] = {
 		"^abc(\\d+)$",
@@ -84,14 +132,19 @@ int main() {
 	do {
 		printf("\nusing re2::RE2...\n");
 
-		re2::RE2 re(std::string("(") + single_pattern + ")");
+		re2::RE2 re(std::string("(") + single_pattern + ")", options);
 		re2::StringPiece match;
 		re2::StringPiece submatch;
 		bool result = RE2::PartialMatch(text, re, &match, &submatch);
 		if (!result)
 			printf("not found\n");
 		else {
-			printf("match at %zd:%zd '%s'\n", match.begin() - text, match.end() - text, std::string(match).c_str());
+			printf(
+				"match at %zd:%zd '%s'\n",
+				match.begin() - text,
+				match.end() - text,
+				std::string(match).c_str()
+			);
 			print_submatches(&submatch, 1);
 		}
 	} while (0);
@@ -114,8 +167,7 @@ int main() {
 			printf("not found\n");
 		else {
 			printf(
-				"match id: %d at %zd:%zd '%s', \n",
-				state.match_id(),
+				"match at %zd:%zd '%s'\n",
 				state.match_offset(),
 				state.match_end_offset(),
 				state.match_text().ToString().c_str()
