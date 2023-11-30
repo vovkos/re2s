@@ -265,13 +265,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   }
 
   if (state->state_flags_ & State::kMatchReady) // restart after match
-    state->reset(
-      state->exec_flags_,
-      state->match_end_offset_,
-      state->match_last_char_,
-      state->eof_offset_,
-      state->eof_char_
-    );
+    state->resume();
 
   if (state->state_flags_ & State::kReverse) { // reverse scan state
     if (state->offset_ > state->match_end_offset_) { // overshoot

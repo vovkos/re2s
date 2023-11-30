@@ -338,6 +338,10 @@ class RE2::SM::State {
     uint64_t eof_offset = -1,
     int eof_char = kByteEndText
   );
+  void resume() {
+    assert(match_end_offset_ != -1);
+    reset(exec_flags_, match_end_offset_, match_last_char_, eof_offset_, eof_char_);
+  }
 
   void set_eof_offset(uint64_t offset, int eof_char = kByteEndText);
   void set_eof(int eof_char = kByteEndText) {
