@@ -15,6 +15,118 @@ enum {
 
 RE2::ErrorCode RegexpErrorToRE2(re2::RegexpStatusCode code);
 
+//..............................................................................
+
+class RE2::SM::SharedState {
+private:
+  struct PersistentDFAState {
+    DFA::State* state;
+    std::vector<int> inst;
+    uint32_t flag;
+
+    PersistentDFAState() {
+      state = NULL;
+      flag = 0;
+    }
+
+    void save() {
+      if (state <= SpecialStateMax)
+        return;
+
+      inst.assign(state->inst_, state->inst_ + state->ninst_);
+      flag = state->flag_;
+      state = NULL;
+    }
+
+    bool restore(DFA* dfa) {
+      assert(!state && inst.size());
+      return (state = dfa->CachedState(inst.data(), (int)inst.size(), flag)) != NULL;
+    }
+  };
+
+public:
+  SharedState(const SM* sm) {
+    sm_ = sm;
+    dfa_ = NULL;
+    sm->attach_shared_state(this);
+  }
+
+  ~SharedState() {
+    if (sm_)
+      sm_->detach_shared_state(this);
+  }
+
+  std::shared_ptr<SharedState> clone() const {
+    assert(sm_);
+    std::shared_ptr<SharedState> ptr = std::make_shared<SharedState>(sm_);
+    ptr->dfa_ = dfa_;
+    ptr->dfa_state_ = dfa_state_;
+    ptr->dfa_start_state_ = dfa_start_state_;
+    return ptr;
+  }
+
+  bool is_initialized(const SM* sm) const {
+    return sm_ == sm && dfa_ != NULL;
+  }
+
+  bool is_ready() const {
+    return dfa_state_.state != NULL;
+  }
+
+  const SM* sm() const {
+    return sm_;
+  }
+
+  DFA* dfa() const {
+    assert(dfa_);
+    return dfa_;
+  }
+
+  DFA::State* dfa_start_state() const {
+    assert(dfa_start_state_.state);
+    return dfa_start_state_.state;
+  }
+
+  DFA::State* dfa_state() const {
+    assert(dfa_state_.state);
+    return dfa_state_.state;
+  }
+
+  void set_dfa_state(DFA::State* dfa_state) {
+    dfa_state_.state = dfa_state;
+  }
+
+  void init(DFA* dfa, DFA::State* dfa_state) {
+    dfa_ = dfa;
+    dfa_state_.state = dfa_start_state_.state = dfa_state;
+  }
+
+  void save() {
+    dfa_state_.save();
+    dfa_start_state_.save();
+  }
+
+  bool restore() {
+    return dfa_state_.restore(dfa_) && dfa_start_state_.restore(dfa_);
+  }
+
+  void reset() {
+    dfa_ = NULL;
+    dfa_state_.state = dfa_start_state_.state = NULL;
+  }
+
+private:
+  const SM* sm_;
+  DFA* dfa_;
+  PersistentDFAState dfa_start_state_;
+  PersistentDFAState dfa_state_;
+  std::list<SharedState*>::iterator it_;
+
+  friend class SM;
+};
+
+//..............................................................................
+
 RE2::SM::Module::Module(int match_id) {
   prog_ = NULL;
   regexp_ = NULL;
@@ -51,6 +163,8 @@ size_t RE2::SM::Module::capture_submatches(
   return result ? nsubmatches : -1;
 }
 
+// . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
 void RE2::SM::clear() {
   main_module_.clear();
   delete rprog_;
@@ -65,12 +179,11 @@ void RE2::SM::clear() {
     delete switch_case_module_array_[i];
 
   switch_case_module_array_.clear();
-}
 
-void RE2::SM::init() {
-  kind_ = kUndefined;
-  rprog_ = NULL;
-  error_code_ = NoError;
+  std::lock_guard<std::mutex> lock(shared_state_list_lock_);
+  std::list<SharedState*>::iterator it = shared_state_list_.begin();
+  for (; it != shared_state_list_.end(); it++)
+    (*it)->sm_ = NULL; // detach
 }
 
 bool RE2::SM::parse_module(Module* module, StringPiece pattern)  {
@@ -237,11 +350,13 @@ struct RE2::SM::DfaBaseParams {
 };
 
 struct RE2::SM::SelectDfaStartStateParams: DfaBaseParams {
+  DFA* dfa;
   DFA::StartInfo* info;
   uint32_t flags;
 
-  SelectDfaStartStateParams(RE2::SM::State* state0, DFA::RWLocker* cache_lock0):
-    DfaBaseParams(state0, cache_lock0) {}
+  SelectDfaStartStateParams(RE2::SM::State* state0, DFA::RWLocker* cache_lock0, DFA* dfa0):
+    DfaBaseParams(state0, cache_lock0),
+    dfa(dfa0) {}
 };
 
 struct RE2::SM::DfaLoopParams: DfaBaseParams {
@@ -255,7 +370,7 @@ struct RE2::SM::DfaLoopParams: DfaBaseParams {
 RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   assert(
     ok() &&
-    !(state->state_flags_ & State::kInvalid) &&
+    !(state->state_flags_ & State::kStateInvalid) &&
     kind_ != kUndefined
   );
 
@@ -264,10 +379,10 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     chunk = StringPiece("", 0); // make sure we don't pass NULL pointers to dfa_loop
   }
 
-  if (state->state_flags_ & State::kMatchReady) // restart after match
+  if (state->state_flags_ & State::kStateMatch) // restart after match
     state->resume();
 
-  if (state->state_flags_ & State::kReverse) { // reverse scan state
+  if (state->state_flags_ & State::kStateReverse) { // reverse scan state
     if (state->offset_ > state->match_end_offset_) { // overshoot
       uint64_t overshoot_size = state->offset_ - state->match_end_offset_;
       if (overshoot_size > chunk.length()) {
@@ -284,7 +399,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     if (leftover_size < chunk.length()) // don't go beyond base_offset
       chunk = StringPiece(chunk.data() + chunk.length() - leftover_size, leftover_size);
 
-    DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
+    DFA::RWLocker cache_lock(&state->shared_->dfa()->cache_mutex_);
     DfaLoopParams loop_params(state, &cache_lock, chunk);
     return dfa_loop(&loop_params);
   }
@@ -293,10 +408,11 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   Prog* prog = main_module_.prog_;
   uint64_t prev_offset = state->offset_;
+  bool is_initialized = state->shared_ && state->shared_->is_initialized(this);
 
   if (
-    (state->state_flags_ & (State::kInitialized | State::kReverse | State::kFullMatch)) ==
-    (State::kInitialized | State::kFullMatch)
+    is_initialized &&
+    (state->state_flags_ & (State::kStateReverse | State::kStateFullMatch)) == State::kStateFullMatch
   ) { // scan all the way to the EOF
     state->offset_ += chunk.length();
     if (state->offset_ < state->eof_offset_) {
@@ -309,31 +425,29 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     state->match_last_char_ = !chunk.empty() ? (uint8_t)chunk[chunk.length() - 1] : state->last_char_;
     state->match_next_char_ = state->eof_char_;
     assert(state->match_id_ != -1); // should have been set in dfa_loop
-  } else if (state->state_flags_ & State::kInitialized) {
-    DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
+  } else if (is_initialized) {
+    DFA::RWLocker cache_lock(&state->shared_->dfa()->cache_mutex_);
     DfaLoopParams loop_params(state, &cache_lock, chunk);
     ExecResult exec_result = dfa_loop(&loop_params);
     if (exec_result != kContinueBackward)
       return exec_result;
   } else {
     if (prog->anchor_start() || (state->exec_flags_ & (kAnchored | kFullMatch)))
-      state->state_flags_ |= State::kStartAnchored;
+      state->state_flags_ |= State::kStateAnchored;
 
     Prog::MatchKind progKind = options_.longest_match() || (state->exec_flags_ & kFullMatch) ?
       Prog::kLongestMatch :
       Prog::kFirstMatch;
 
-    state->dfa_ = prog->GetDFA(progKind);
-    state->dfa_->want_match_id_ = true;
+    DFA* dfa = prog->GetDFA(progKind);
+    dfa->want_match_id_ = true;
 
-    DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
-    SelectDfaStartStateParams select_start_params(state, &cache_lock);
+    DFA::RWLocker cache_lock(&dfa->cache_mutex_);
+    SelectDfaStartStateParams select_start_params(state, &cache_lock, dfa);
     if (!select_dfa_start_state(&select_start_params)) {
-      state->state_flags_ |= State::kInvalid;
+      state->mark_invalid();
       return kErrorOutOfMemory;
     }
-
-    state->state_flags_ |= State::kInitialized;
 
     DfaLoopParams loop_params(state, &cache_lock, chunk);
     ExecResult exec_result = dfa_loop(&loop_params);
@@ -355,7 +469,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
         state->match_end_offset_ != chunk_end_offset     // also check the "real" eof offset
       )
     ) {
-      state->state_flags_ |= State::kInvalid;
+      state->mark_invalid();
       return kMismatch;
     }
 
@@ -366,17 +480,17 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   if (state->exec_flags_ & kEndOffsetOnly) { // we only want the match end offset -- no need to scan back
     state->match_offset_ = state->match_end_offset_;
-    state->state_flags_ |= State::kMatchReady;
+    state->state_flags_ |= State::kStateMatch;
     return kMatch;
   }
 
-  state->dfa_ = rprog_->GetDFA(Prog::kLongestMatch);
-  state->state_flags_ = State::kReverse | State::kStartAnchored | State::kInitialized;
+  DFA* dfa = rprog_->GetDFA(Prog::kLongestMatch);
+  state->state_flags_ = State::kStateReverse | State::kStateAnchored;
 
-  DFA::RWLocker cache_lock(&state->dfa_->cache_mutex_);
-  SelectDfaStartStateParams select_start_params(state, &cache_lock);
+  DFA::RWLocker cache_lock(&dfa->cache_mutex_);
+  SelectDfaStartStateParams select_start_params(state, &cache_lock, dfa);
   if (!select_dfa_start_state(&select_start_params)) {
-    state->state_flags_ |= State::kInvalid;
+    state->mark_invalid();
     return kErrorOutOfMemory;
   }
 
@@ -393,14 +507,14 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
   return dfa_loop(&loop_params);
 }
 
-bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
+bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) const {
   State* state = params->state;
-  DFA* dfa = state->dfa_;
+  DFA* dfa = params->dfa;
 
   // Determine correct search type.
   int start;
   uint32_t flags;
-  if (!(state->state_flags_ & State::kReverse)) {
+  if (!(state->state_flags_ & State::kStateReverse)) {
     if (state->base_offset_ == 0) {
       start = DFA::kStartBeginText;
       flags = kEmptyBeginText | kEmptyBeginLine;
@@ -430,7 +544,7 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
     }
   }
 
-  if (state->state_flags_ & State::kStartAnchored)
+  if (state->state_flags_ & State::kStateAnchored)
     start |= DFA::kStartAnchored;
 
   DFA::StartInfo* info = &dfa->start_[start];
@@ -441,6 +555,7 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
   // Try again after resetting the cache
   // (ResetCache will relock cache_lock for writing).
   if (!select_dfa_start_state_impl(params)) {
+    save_shared_states();
     dfa->ResetCache(params->cache_lock);
     if (!select_dfa_start_state_impl(params)) {
       LOG(DFATAL) << "Failed to analyze start state.";
@@ -457,20 +572,23 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) {
   if (
     dfa->prog_->can_prefix_accel() &&
     !dfa->prog_->prefix_foldcase() &&
-    !(state->state_flags_ & State::kStartAnchored) &&
+    !(state->state_flags_ & State::kStateAnchored) &&
     start_state > SpecialStateMax &&
     start_state->flag_ >> DFA::kFlagNeedShift == 0
   )
-    state->state_flags_ |= State::kCanPrefixAccel;
+    state->state_flags_ |= State::kStateCanPrefixAccel;
 
-  state->dfa_state_ = state->dfa_start_state_ = start_state;
+  if (!state->shared_ || state->shared_.use_count() > 1)
+    state->shared_ = std::make_shared<SharedState>(this);
+
+  state->shared_->init(dfa, start_state);
   return true;
 }
 
 // Fills in info if needed.  Returns true on success, false on failure.
 bool RE2::SM::select_dfa_start_state_impl(SelectDfaStartStateParams* params) {
   State* state = params->state;
-  DFA* dfa = state->dfa_;
+  DFA* dfa = params->dfa;
 
   // Quick check.
   DFA::State* start = params->info->start.load(std::memory_order_acquire);
@@ -485,9 +603,9 @@ bool RE2::SM::select_dfa_start_state_impl(SelectDfaStartStateParams* params) {
   dfa->q0_->clear();
   dfa->AddToQueue(
     dfa->q0_,
-    (state->state_flags_ & State::kStartAnchored) ?
-      state->dfa_->prog_->start() :
-      state->dfa_->prog_->start_unanchored(),
+    (state->state_flags_ & State::kStateAnchored) ?
+      dfa->prog_->start() :
+      dfa->prog_->start_unanchored(),
     params->flags
   );
 
@@ -500,16 +618,46 @@ bool RE2::SM::select_dfa_start_state_impl(SelectDfaStartStateParams* params) {
   return true;
 }
 
+void RE2::SM::attach_shared_state(SharedState* sstate) const {
+  std::lock_guard<std::mutex> lock(shared_state_list_lock_);
+  shared_state_list_.push_front(sstate);
+  sstate->it_ = shared_state_list_.begin();
+}
+
+void RE2::SM::detach_shared_state(SharedState* sstate) const {
+  std::lock_guard<std::mutex> lock(shared_state_list_lock_);
+  shared_state_list_.erase(sstate->it_);
+}
+
+void RE2::SM::save_shared_states() const {
+  std::lock_guard<std::mutex> lock(shared_state_list_lock_);
+  std::list<SharedState*>::iterator it = shared_state_list_.begin();
+  for (; it != shared_state_list_.end(); it++)
+    (*it)->save();
+}
+
 template <
   bool can_prefix_accel,
   bool reverse
 >
 RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
   State* state = params->state;
-  DFA* dfa = state->dfa_;
+  if (state->shared_.use_count() > 1)
+    state->shared_ = state->shared_->clone();
+
+  SharedState* sstate = state->shared_.get();
+  if (!sstate->is_ready()) {
+    bool result = sstate->restore();
+    if (!result) {
+      state->mark_invalid();
+      return kErrorOutOfMemory;
+    }
+  }
+
+  DFA* dfa = sstate->dfa();
   Prog* prog = dfa->prog_;
-  DFA::State* start = (DFA::State*)state->dfa_start_state_;
-  DFA::State* s = (DFA::State*)state->dfa_state_;
+  DFA::State* start = sstate->dfa_start_state();
+  DFA::State* s = sstate->dfa_state();
   uint64_t chunk_end_offset;
 
   size_t length = params->chunk.length();
@@ -543,31 +691,23 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     }
 
     int c = reverse ? *--p : *p++;
-
     DFA::State* ns = s->next_[bytemap[c]].load(std::memory_order_acquire);
     if (!ns) {
       ns = dfa->RunStateOnByteUnlocked(s, c);
       if (!ns) {
-        DFA::StateSaver save_start(dfa, start);
         DFA::StateSaver save_s(dfa, s);
         DFA::StateSaver save_lastmatch_state(dfa, lastmatch_state);
 
+        sstate->sm()->save_shared_states();
         dfa->ResetCache(params->cache_lock);
 
         if (
-          !(start = save_start.Restore()) ||
           !(s = save_s.Restore()) ||
-          !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore())
+          !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore()) ||
+          !sstate->restore() ||
+          !(ns = dfa->RunStateOnByteUnlocked(s, c))
         ) {
-          state->state_flags_ |= State::kInvalid;
-          return kErrorOutOfMemory;
-        }
-
-        state->dfa_start_state_ = start; // update start state
-
-        ns = dfa->RunStateOnByteUnlocked(s, c);
-        if (!ns) {
-          state->state_flags_ |= State::kInvalid;
+          state->mark_invalid();
           return kErrorOutOfMemory;
         }
       }
@@ -582,7 +722,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           if (lastmatch)
             state->match_offset_ = state->offset_ - (ep - lastmatch);
           else if (state->match_offset_ == -1) {
-            state->state_flags_ |= State::kInvalid;
+            state->mark_invalid();
             return kErrorInconsistent;
           }
 
@@ -596,7 +736,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
             state->match_last_char_ = bp < lastmatch ? lastmatch[-1] : state->last_char_;
             state->match_next_char_ = *lastmatch;
           } else if (state->match_end_offset_ == -1) {
-            state->state_flags_ |= State::kInvalid;
+            state->mark_invalid();
             return kMismatch;
           }
 
@@ -616,7 +756,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
           state->match_id_ = lastmatch_state->MatchId();
           state->offset_ += length;
           if (state->offset_ < state->eof_offset_) {
-            state->state_flags_ |= State::kFullMatch;
+            state->state_flags_ |= State::kStateFullMatch;
             if (bp < ep)
               state->last_char_ = ep[-1];
             return kContinue;
@@ -649,7 +789,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       state->match_next_char_ = *lastmatch;
     }
 
-  state->dfa_state_ = s;
+  sstate->set_dfa_state(s);
 
   if (reverse) {
     state->offset_ = state->offset_ - length;
@@ -675,19 +815,16 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       DFA::StateSaver save_s(dfa, s);
       DFA::StateSaver save_lastmatch_state(dfa, lastmatch_state);
 
+      sstate->sm()->save_shared_states();
       dfa->ResetCache(params->cache_lock);
 
       if (
         !(s = save_s.Restore()) ||
-        !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore())
+        !reverse && lastmatch_state && !(lastmatch_state = save_lastmatch_state.Restore()) ||
+        !sstate->restore() ||
+        !(ns = dfa->RunStateOnByteUnlocked(s, c))
       ) {
-        state->state_flags_ |= State::kInvalid;
-        return kErrorOutOfMemory;
-      }
-
-      ns = dfa->RunStateOnByteUnlocked(s, c);
-      if (!ns) {
-        state->state_flags_ |= State::kInvalid;
+        state->mark_invalid();
         return kErrorOutOfMemory;
       }
     }
@@ -700,7 +837,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     if (ns == DeadState) {
       if (reverse) {
         if (state->match_offset_ == -1) {
-          state->state_flags_ |= State::kInvalid;
+          state->mark_invalid();
           return kErrorInconsistent;
         }
 
@@ -708,7 +845,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
         return kMatch;
       } else {
         if (state->match_end_offset_ == -1) {
-          state->state_flags_ |= State::kInvalid;
+          state->mark_invalid();
           return kMismatch;
         }
 
@@ -747,7 +884,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
 
   if (reverse) {
     if (state->match_offset_ == -1) {
-      state->state_flags_ |= State::kInvalid;
+      state->mark_invalid();
       return kErrorInconsistent;
     }
 
@@ -755,7 +892,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     return kMatch;
   } else {
     if (state->match_end_offset_ == -1) {
-      state->state_flags_ |= State::kInvalid;
+      state->mark_invalid();
       return kMismatch;
     }
 
@@ -787,16 +924,28 @@ RE2::SM::ExecResult RE2::SM::dfa_loop(DfaLoopParams* params) {
     &SM::dfa_loop_tt,
   };
 
-  size_t i = params->state->state_flags_ & 0x03; // State::kCanPrefixAccel | State::kReverse;
+  size_t i = params->state->state_flags_ & 0x03; // State::kStateCanPrefixAccel | State::kStateReverse;
   return funcTable[i](params);
 }
 
+// . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
 void RE2::SM::State::finalize_match(uint64_t chunk_end_offset, StringPiece chunk) {
   assert(match_offset_ != -1 && match_end_offset_ != -1);
-  state_flags_ |= State::kMatchReady;
+  state_flags_ |= State::kStateMatch;
   uint64_t chunk_offset = chunk_end_offset - chunk.length();
   if (match_offset_ >= chunk_offset && match_end_offset_ <= chunk_end_offset)
     match_text_ = StringPiece(chunk.data() + match_offset_ - chunk_offset, match_length());
 }
+
+void RE2::SM::State::reset_shared() {
+  if (shared_)
+    if (shared_.use_count() == 1)
+      shared_->reset();
+    else
+      shared_ = NULL;
+}
+
+//..............................................................................
 
 }  // namespace re2

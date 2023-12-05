@@ -129,18 +129,6 @@ DFA::~DFA() {
   ClearCache();
 }
 
-// In the DFA state graph, s->next[c] == NULL means that the
-// state has not yet been computed and needs to be.  We need
-// a different special value to signal that s->next[c] is a
-// state that can never lead to a match (and thus the search
-// can be called off).  Hence DeadState.
-#define DeadState reinterpret_cast<State*>(1)
-
-// Signals that the rest of the string matches no matter what it is.
-#define FullMatchState reinterpret_cast<State*>(2)
-
-#define SpecialStateMax FullMatchState
-
 // Debugging printouts
 
 // For debugging, returns a string representation of the work queue.

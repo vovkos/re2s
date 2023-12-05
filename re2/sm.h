@@ -19,13 +19,16 @@ class Regexp;
 class DFA;
 class RWLocker;
 
+//..............................................................................
+
 class RE2::SM {
  private:
   struct DfaBaseParams;
   struct SelectDfaStartStateParams;
   struct DfaLoopParams;
 
-  struct Module {
+  class Module {
+  public:
     Module(int match_id = 0);
     ~Module() {
       clear();
@@ -65,6 +68,8 @@ class RE2::SM {
     friend class RE2::SM;
   };
 
+  class SharedState;
+
  public:
   class State;
 
@@ -77,10 +82,10 @@ class RE2::SM {
   enum ExecResult {
 	  kErrorInconsistent = -2, // reverse scan couldn't find a match (inconsistent data)
 	  kErrorOutOfMemory  = -1, // DFA run out-of-memory
-	  kMismatch          = 0,  // match can't be found; next exec will reset & restart
+	  kMismatch          = 0,  // match can't be found; reset before reusing the same state
 	  kContinue,               // match not found yet; continue feeding next chunks of data
 	  kContinueBackward,       // match end found; continue feeding previous chunks of data
-	  kMatch,                  // match end & start found
+	  kMatch,                  // match end & start found; ok to reuse the same state
   };
 
   enum Kind {
@@ -207,13 +212,19 @@ class RE2::SM {
 
  private:
   void init();
+
   bool parse_module(Module* module, StringPiece pattern);
   bool compile_prog(Module* module);
   bool compile_rprog();
+
   re2::Regexp* append_regexp_match_id(re2::Regexp* regexp, int match_id);
 
-  static bool select_dfa_start_state(SelectDfaStartStateParams* params);
+  bool select_dfa_start_state(SelectDfaStartStateParams* params) const;
   static bool select_dfa_start_state_impl(SelectDfaStartStateParams* params);
+
+  void attach_shared_state(SharedState* sstate) const;
+  void detach_shared_state(SharedState* sstate) const;
+  void save_shared_states() const;
 
   template <
     bool can_prefix_accel,
@@ -234,24 +245,28 @@ class RE2::SM {
   ErrorCode error_code_;
   std::string error_;
   std::string error_arg_;
-
+  mutable std::list<SharedState*> shared_state_list_;
+  mutable std::mutex shared_state_list_lock_;
   std::vector<Module*> switch_case_module_array_;
   Module main_module_;
   Prog* rprog_;
+
+  friend class SharedState;
 };
 
-class RE2::SM::State {
-  friend class RE2::SM;
+// . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 
- protected:
+class RE2::SM::State {
+ private:
+   // avoid naming conflicts with SM::ExecFlags/ExecResult
+
    enum StateFlags {
-     kReverse        = 0x0001, // revere DFA scan to find the start of a match
-     kCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
-     kStartAnchored  = 0x0010, // anchored search
-     kInitialized    = 0x0020, // state is initialized
-     kFullMatch      = 0x0040, // in this state, DFA matches all the way to the very end
-     kMatchReady     = 0x0100, // post match; will auto-restart on the next exec
-     kInvalid        = 0x0200, // post error or mismatch; needs a manual reset
+     kStateReverse        = 0x0001, // revere DFA scan to find the start of a match
+     kStateCanPrefixAccel = 0x0002, // can use memchr to fast-forward to a potential match
+     kStateAnchored       = 0x0010, // anchored search
+     kStateFullMatch      = 0x0020, // in this state, DFA matches all the way to the very end
+     kStateMatch          = 0x0040, // post match; will auto-restart on the next exec
+     kStateInvalid        = 0x0080, // post error or mismatch; needs a manual reset
    };
 
  public:
@@ -267,6 +282,8 @@ class RE2::SM::State {
   ) {
     reset(exec_flags, base_offset, base_char, eof_offset, eof_char);
   }
+  State(const State& src) = default;
+  State(State&& src) = default;
 
   operator bool () const {
     return is_match();
@@ -302,7 +319,7 @@ class RE2::SM::State {
   // match info
 
   bool is_match() const {
-    return (state_flags_ & kMatchReady) != 0;
+    return (state_flags_ & kStateMatch) != 0;
   }
   bool has_match_text() const {
     return match_text_.data() != NULL;
@@ -351,11 +368,15 @@ class RE2::SM::State {
  protected:
   // adds kMatch to state->flags_  and sets up state->match_text_ when it's available
   void finalize_match(uint64_t chunk_end_offset, StringPiece chunk);
+  void reset_shared();
+
+  void mark_invalid() {
+    state_flags_ |= kStateInvalid;
+    reset_shared();
+  }
 
  private:
-  DFA* dfa_;
-  void* dfa_state_;       // DFA::State*
-  void* dfa_start_state_; // DFA::State*
+  std::shared_ptr<SharedState> shared_;
   uint64_t offset_;
   uint64_t base_offset_;
   uint64_t eof_offset_;
@@ -370,7 +391,11 @@ class RE2::SM::State {
   int last_char_;
   int exec_flags_  : 16;
   int state_flags_ : 16;
+
+  friend class SM;
 };
+
+// . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 
 inline void RE2::SM::State::reset(
   int exec_flags,
@@ -379,9 +404,7 @@ inline void RE2::SM::State::reset(
   uint64_t eof_offset,
   int eof_char
 ) {
-  dfa_ = NULL;
-  dfa_state_ = NULL;
-  dfa_start_state_ = NULL;
+  reset_shared();
   offset_ = base_offset;
   base_offset_ = base_offset;
   eof_offset_ = eof_offset;
@@ -399,10 +422,16 @@ inline void RE2::SM::State::reset(
 }
 
 inline void RE2::SM::State::set_eof_offset(uint64_t offset, int eof_char) {
-  assert(!(state_flags_ & kReverse) || (state_flags_ & kMatchReady)); // after match we still have kReverse
+  assert(!(state_flags_ & kStateReverse) || (state_flags_ & kStateMatch)); // after match we still have kReverse
   assert(offset >= offset_);
   eof_offset_ = offset;
   eof_char = eof_char;
+}
+
+inline void RE2::SM::init() {
+  kind_ = kUndefined;
+  rprog_ = NULL;
+  error_code_ = NoError;
 }
 
 inline RE2::SM::State RE2::SM::exec(StringPiece text, int exec_flags) const {
@@ -415,6 +444,8 @@ inline RE2::SM::ExecResult RE2::SM::exec_eof(State* state, StringPiece last_chun
   state->set_eof_offset(state->offset_ + last_chunk.size(), eof_char);
   return exec(state, last_chunk);
 }
+
+//..............................................................................
 
 }  // namespace re2
 
