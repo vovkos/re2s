@@ -282,8 +282,13 @@ class RE2::SM::State {
   ) {
     reset(exec_flags, base_offset, base_char, eof_offset, eof_char);
   }
+
+  // copyable & movable normally
+
   State(const State& src) = default;
   State(State&& src) = default;
+  State& operator = (const State& src) = default;
+  State& operator = (State&& src) = default;
 
   operator bool () const {
     return is_match();
