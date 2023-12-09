@@ -5,6 +5,7 @@
 #ifndef RE2_SM_H_
 #define RE2_SM_H_
 
+#include <memory>
 #include <string>
 #include <list>
 #include <assert.h>
