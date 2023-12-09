@@ -64,7 +64,7 @@ class RE2::SM {
     re2::Regexp* regexp_;
     Prog* prog_;
     size_t capture_count_;
-	  int match_id_;
+    int match_id_;
 
     friend class RE2::SM;
   };
@@ -81,12 +81,12 @@ class RE2::SM {
   };
 
   enum ExecResult {
-	  kErrorInconsistent = -2, // reverse scan couldn't find a match (inconsistent data)
-	  kErrorOutOfMemory  = -1, // DFA run out-of-memory
-	  kMismatch          = 0,  // match can't be found; reset before reusing the same state
-	  kContinue,               // match not found yet; continue feeding next chunks of data
-	  kContinueBackward,       // match end found; continue feeding previous chunks of data
-	  kMatch,                  // match end & start found; ok to reuse the same state
+    kErrorInconsistent = -2, // reverse scan couldn't find a match (inconsistent data)
+    kErrorOutOfMemory  = -1, // DFA run out-of-memory
+    kMismatch          = 0,  // match can't be found; reset before reusing the same state
+    kContinue,               // match not found yet; continue feeding next chunks of data
+    kContinueBackward,       // match end found; continue feeding previous chunks of data
+    kMatch,                  // match end & start found; ok to reuse the same state
   };
 
   enum Kind {

@@ -45,28 +45,28 @@ private:
   };
 
 public:
-  SharedState(const SM* sm) {
-    sm_ = sm;
+  SharedState() {
+    sm_ = NULL;
     dfa_ = NULL;
-    sm->attach_shared_state(this);
   }
 
   ~SharedState() {
-    if (sm_)
+  	if (sm_)
       sm_->detach_shared_state(this);
   }
 
   std::shared_ptr<SharedState> clone() const {
-    assert(sm_);
-    std::shared_ptr<SharedState> ptr = std::make_shared<SharedState>(sm_);
+    assert(sm_ && dfa_);
+    std::shared_ptr<SharedState> ptr = std::make_shared<SharedState>();
+    sm_->attach_shared_state(ptr.get());
     ptr->dfa_ = dfa_;
     ptr->dfa_state_ = dfa_state_;
     ptr->dfa_start_state_ = dfa_start_state_;
     return ptr;
   }
 
-  bool is_initialized(const SM* sm) const {
-    return sm_ == sm && dfa_ != NULL;
+  bool is_initialized() const {
+    return dfa_ != NULL;
   }
 
   bool is_ready() const {
@@ -96,7 +96,14 @@ public:
     dfa_state_.state = dfa_state;
   }
 
-  void init(DFA* dfa, DFA::State* dfa_state) {
+  void init(const SM* sm, DFA* dfa, DFA::State* dfa_state) {
+  	if (!sm_)
+  		sm->attach_shared_state(this);
+  	else if (sm_ != sm) {
+  		sm_->detach_shared_state(this);
+  		sm->attach_shared_state(this);
+  	}
+
     dfa_ = dfa;
     dfa_state_.state = dfa_start_state_.state = dfa_state;
   }
@@ -184,6 +191,8 @@ void RE2::SM::clear() {
   std::list<SharedState*>::iterator it = shared_state_list_.begin();
   for (; it != shared_state_list_.end(); it++)
     (*it)->sm_ = NULL; // detach
+
+  shared_state_list_.clear();
 }
 
 bool RE2::SM::parse_module(Module* module, StringPiece pattern)  {
@@ -408,7 +417,7 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
 
   Prog* prog = main_module_.prog_;
   uint64_t prev_offset = state->offset_;
-  bool is_initialized = state->shared_ && state->shared_->is_initialized(this);
+  bool is_initialized = state->shared_ && state->shared_->sm() == this && state->shared_->is_initialized();
 
   if (
     is_initialized &&
@@ -579,9 +588,9 @@ bool RE2::SM::select_dfa_start_state(SelectDfaStartStateParams* params) const {
     state->state_flags_ |= State::kStateCanPrefixAccel;
 
   if (!state->shared_ || state->shared_.use_count() > 1)
-    state->shared_ = std::make_shared<SharedState>(this);
+    state->shared_ = std::make_shared<SharedState>();
 
-  state->shared_->init(dfa, start_state);
+  state->shared_->init(this, dfa, start_state);
   return true;
 }
 
@@ -619,14 +628,18 @@ bool RE2::SM::select_dfa_start_state_impl(SelectDfaStartStateParams* params) {
 }
 
 void RE2::SM::attach_shared_state(SharedState* sstate) const {
+  assert(sstate->sm() == NULL);
   std::lock_guard<std::mutex> lock(shared_state_list_lock_);
   shared_state_list_.push_front(sstate);
+  sstate->sm_ = this;
   sstate->it_ = shared_state_list_.begin();
 }
 
 void RE2::SM::detach_shared_state(SharedState* sstate) const {
+  assert(sstate->sm() == this);
   std::lock_guard<std::mutex> lock(shared_state_list_lock_);
   shared_state_list_.erase(sstate->it_);
+  sstate->sm_ = NULL;
 }
 
 void RE2::SM::save_shared_states() const {
