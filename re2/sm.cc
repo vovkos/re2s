@@ -51,7 +51,7 @@ public:
   }
 
   ~SharedState() {
-  	if (sm_)
+    if (sm_)
       sm_->detach_shared_state(this);
   }
 
@@ -97,12 +97,12 @@ public:
   }
 
   void init(const SM* sm, DFA* dfa, DFA::State* dfa_state) {
-  	if (!sm_)
-  		sm->attach_shared_state(this);
-  	else if (sm_ != sm) {
-  		sm_->detach_shared_state(this);
-  		sm->attach_shared_state(this);
-  	}
+    if (!sm_)
+      sm->attach_shared_state(this);
+    else if (sm_ != sm) {
+      sm_->detach_shared_state(this);
+      sm->attach_shared_state(this);
+    }
 
     dfa_ = dfa;
     dfa_state_.state = dfa_start_state_.state = dfa_state;
