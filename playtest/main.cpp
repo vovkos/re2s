@@ -168,7 +168,7 @@ int main() {
       printf("not found\n");
     else {
       printf(
-        "match at %zd:%zd '%s'\n",
+        "match at %" PRIu64 ":%" PRIu64 " '%s'\n",
         state.match_offset(),
         state.match_end_offset(),
         state.match_text().ToString().c_str()
@@ -199,7 +199,7 @@ int main() {
       printf("not found\n");
     else {
       printf(
-        "match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
+        "match id: %d at %" PRIu64 ":%" PRIu64 " '%s' { 0x%02x; 0x%02x }\n",
         state.match_id(),
         state.match_offset(),
         state.match_end_offset(),
@@ -244,7 +244,7 @@ int main() {
         return -1;
 
       case re2::RE2::SM::kContinueBackward:
-        printf("end-of-match id: %d at %zd\n", state.match_id(), state.match_end_offset());
+        printf("end-of-match id: %d at %" PRIu64 "\n", state.match_id(), state.match_end_offset());
 
         while (p > text) {
           re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p - 1, 1));
@@ -267,7 +267,7 @@ int main() {
       case re2::RE2::SM::kMatch:
         match_text = std::string(text + state.match_offset(), state.match_length());
         printf(
-          "match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
+          "match id: %d at %" PRIu64 ":%" PRIu64 " '%s' { 0x%02x; 0x%02x }\n",
           state.match_id(),
           state.match_offset(),
           state.match_end_offset(),
