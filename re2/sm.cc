@@ -791,7 +791,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
     }
   }
 
-  if (lastmatch) // the DFA notices the match one byte late
+  if (lastmatch) { // the DFA notices the match one byte late
     if (reverse)
       state->match_offset_ = state->offset_ - (ep - lastmatch);
     else {
@@ -801,6 +801,7 @@ RE2::SM::ExecResult RE2::SM::dfa_loop_impl(DfaLoopParams* params) {
       state->match_last_char_ = bp < lastmatch ? lastmatch[-1] : state->last_char_;
       state->match_next_char_ = *lastmatch;
     }
+  }
 
   sstate->set_dfa_state(s);
 
@@ -952,11 +953,12 @@ void RE2::SM::State::finalize_match(uint64_t chunk_end_offset, StringPiece chunk
 }
 
 void RE2::SM::State::reset_shared() {
-  if (shared_)
+  if (shared_) {
     if (shared_.use_count() == 1)
       shared_->reset();
     else
       shared_ = NULL;
+  }
 }
 
 //..............................................................................

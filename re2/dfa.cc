@@ -354,7 +354,7 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
   }
 
   // Append MatchSep and the match IDs in mq if necessary.
-  if (mq != NULL)
+  if (mq != NULL) {
     if (want_match_id_) {
       int match_id = INT_MAX;
       inst[n++] = MatchSep;
@@ -378,6 +378,7 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
           inst[n++] = ip->match_id();
       }
     }
+  }
 
   // Save the needed empty-width flags in the top bits for use later.
   flag |= needflags << kFlagNeedShift;
