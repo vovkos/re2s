@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <assert.h>
 #include <string>
 
@@ -68,7 +69,7 @@ int main() {
     if (!state)
       printf("not found\n");
     else
-      printf("match at %lld:%lld '%s'\n", state.match_offset(), state.match_end_offset(), state.match_text().ToString().c_str());
+      printf("match at %" PRIu64 ":%" PRIu64 " '%s'\n", state.match_offset(), state.match_end_offset(), state.match_text().ToString().c_str());
   } while (0);
 
   do {
