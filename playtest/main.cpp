@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <inttypes.h>
 #include <assert.h>
 #include <string>
 
@@ -69,7 +68,12 @@ int main() {
     if (!state)
       printf("not found\n");
     else
-      printf("match at %" PRIu64 ":%" PRIu64 " '%s'\n", state.match_offset(), state.match_end_offset(), state.match_text().ToString().c_str());
+      printf(
+        "match at %zd:%zd '%s'\n",
+        (size_t)state.match_offset(),
+        (size_t)state.match_end_offset(),
+        state.match_text().ToString().c_str()
+      );
   } while (0);
 
   do {
@@ -168,9 +172,9 @@ int main() {
       printf("not found\n");
     else {
       printf(
-        "match at %" PRIu64 ":%" PRIu64 " '%s'\n",
-        state.match_offset(),
-        state.match_end_offset(),
+        "match at %zd:%zd '%s'\n",
+        (size_t)state.match_offset(),
+        (size_t)state.match_end_offset(),
         state.match_text().ToString().c_str()
       );
 
@@ -199,10 +203,10 @@ int main() {
       printf("not found\n");
     else {
       printf(
-        "match id: %d at %" PRIu64 ":%" PRIu64 " '%s' { 0x%02x; 0x%02x }\n",
+        "match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
         state.match_id(),
-        state.match_offset(),
-        state.match_end_offset(),
+        (size_t)state.match_offset(),
+        (size_t)state.match_end_offset(),
         state.match_text().ToString().c_str(),
         state.match_last_char(),
         state.match_next_char()
@@ -244,7 +248,7 @@ int main() {
         return -1;
 
       case re2::RE2::SM::kContinueBackward:
-        printf("end-of-match id: %d at %" PRIu64 "\n", state.match_id(), state.match_end_offset());
+        printf("end-of-match id: %d at %zd\n", state.match_id(), (size_t)state.match_end_offset());
 
         while (p > text) {
           re2::RE2::SM::ExecResult result = sm.exec(&state, re2::StringPiece(p - 1, 1));
@@ -265,12 +269,12 @@ int main() {
         // fallthrough
 
       case re2::RE2::SM::kMatch:
-        match_text = std::string(text + state.match_offset(), state.match_length());
+        match_text = std::string(text + (size_t)state.match_offset(), (size_t)state.match_length());
         printf(
-          "match id: %d at %" PRIu64 ":%" PRIu64 " '%s' { 0x%02x; 0x%02x }\n",
+          "match id: %d at %zd:%zd '%s' { 0x%02x; 0x%02x }\n",
           state.match_id(),
-          state.match_offset(),
-          state.match_end_offset(),
+          (size_t)state.match_offset(),
+          (size_t)state.match_end_offset(),
           match_text.c_str(),
           state.match_last_char(),
           state.match_next_char()
