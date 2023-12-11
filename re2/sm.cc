@@ -400,13 +400,13 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
       }
 
       state->offset_ = state->match_end_offset_;
-      state->match_next_char_ = (uint8_t)chunk[chunk.length() - overshoot_size];
-      chunk.remove_suffix(overshoot_size);
+      state->match_next_char_ = (uint8_t)chunk[chunk.length() - (size_t)overshoot_size];
+      chunk.remove_suffix((size_t)overshoot_size);
     }
 
     uint64_t leftover_size = state->offset_ - state->base_offset_;
     if (leftover_size < chunk.length()) // don't go beyond base_offset
-      chunk = StringPiece(chunk.data() + chunk.length() - leftover_size, leftover_size);
+      chunk = StringPiece(chunk.data() + chunk.length() - (size_t)leftover_size, (size_t)leftover_size);
 
     DFA::RWLocker cache_lock(&state->shared_->dfa()->cache_mutex_);
     DfaLoopParams loop_params(state, &cache_lock, chunk);
@@ -508,11 +508,11 @@ RE2::SM::ExecResult RE2::SM::exec(State* state, StringPiece chunk) const {
     return kContinueBackward;
   }
 
-  size_t prefix_size = state->match_end_offset_ - prev_offset;
+  uint64_t prefix_size = state->match_end_offset_ - prev_offset;
   assert(prefix_size <= chunk.length());
   state->offset_ = state->match_end_offset_;
 
-  DfaLoopParams loop_params(state, &cache_lock, StringPiece(chunk.data(), prefix_size));
+  DfaLoopParams loop_params(state, &cache_lock, StringPiece(chunk.data(), (size_t)prefix_size));
   return dfa_loop(&loop_params);
 }
 
@@ -949,7 +949,7 @@ void RE2::SM::State::finalize_match(uint64_t chunk_end_offset, StringPiece chunk
   state_flags_ |= State::kStateMatch;
   uint64_t chunk_offset = chunk_end_offset - chunk.length();
   if (match_offset_ >= chunk_offset && match_end_offset_ <= chunk_end_offset)
-    match_text_ = StringPiece(chunk.data() + match_offset_ - chunk_offset, match_length());
+    match_text_ = StringPiece(chunk.data() + (size_t)(match_offset_ - chunk_offset), (size_t)match_length());
 }
 
 void RE2::SM::State::reset_shared() {
