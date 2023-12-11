@@ -291,7 +291,7 @@ int RE2::SM::add_switch_case(StringPiece pattern) {
   assert(kind_ == kRegexpSwitch);
 
   int match_id = (int)switch_case_module_array_.size();
-  std::unique_ptr<Module> module = std::make_unique<Module>(match_id);
+  std::unique_ptr<Module> module(new Module(match_id));
   bool result =
     parse_module(module.get(), pattern) &&
     compile_prog(module.get());
