@@ -358,8 +358,6 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
   if (mq != NULL) {
     if (want_match_id_) {
       int match_id = INT_MAX;
-      inst[n++] = MatchSep;
-
       for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
         int id = *i;
         if (mq->is_mark(id))
@@ -369,7 +367,8 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
           match_id = ip->match_id();
       }
 
-      inst[n++] = match_id;
+      inst[n++] = MatchSep;
+      inst[n] = match_id;
     } else if (kind_ == Prog::kManyMatch) {
       inst[n++] = MatchSep;
       for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {
