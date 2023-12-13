@@ -78,6 +78,7 @@ DFA::DFA(Prog* prog, Prog::MatchKind kind, int64_t max_mem)
   : prog_(prog),
     kind_(kind),
     init_failed_(false),
+    want_match_id_(false),
     q0_(NULL),
     q1_(NULL),
     mem_budget_(max_mem) {
