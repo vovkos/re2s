@@ -368,7 +368,7 @@ DFA::State* DFA::WorkqToCachedState(Workq* q, Workq* mq, uint32_t flag) {
       }
 
       inst[n++] = MatchSep;
-      inst[n] = match_id;
+      inst[n++] = match_id;
     } else if (kind_ == Prog::kManyMatch) {
       inst[n++] = MatchSep;
       for (Workq::iterator i = mq->begin(); i != mq->end(); ++i) {

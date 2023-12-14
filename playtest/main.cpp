@@ -172,7 +172,8 @@ int main() {
       printf("not found\n");
     else {
       printf(
-        "match at %zd:%zd '%s'\n",
+        "match id: %d at %zd:%zd '%s'\n",
+        state.match_id(),
         (size_t)state.match_offset(),
         (size_t)state.match_end_offset(),
         state.match_text().ToString().c_str()
