@@ -405,7 +405,7 @@ Frag Compiler::Match(int32_t match_id) {
   if (id < 0)
     return NoMatch();
   inst_[id].InitMatch(match_id);
-  return Frag(id, kNullPatchList, false);
+  return Frag(id, kNullPatchList, true); // match is essentially nullable
 }
 
 // Returns a fragment matching a particular empty-width op (like ^ or $)
@@ -1136,7 +1136,7 @@ Prog* Compiler::Compile(Regexp* re, bool reversed, int64_t max_mem) {
   c.reversed_ = false;
   all = c.Cat(all, c.Match(0));
 
-  c.prog_->set_nullable(all.nullable);
+	c.prog_->set_nullable(all.nullable);
   c.prog_->set_reversed(reversed);
   if (c.prog_->reversed()) {
     c.prog_->set_anchor_start(is_anchor_end);

@@ -46,6 +46,23 @@ int main() {
   options.set_case_sensitive(false);
   options.set_multi_line(true);
 
+	do {
+   printf("\nchecking nullability\n");
+
+   const char* pattern_list[] = {
+		 "a",
+		 "a+",
+		 "a?",
+		 "a|a+",
+		 "a|a*",
+		 "a|a?",
+	 };
+	 for (const char* pattern: pattern_list) {
+		 re2::RE2::SM sm(pattern);
+		 printf("'%s' is nullable: %d\n", pattern, sm.nullable());
+	 }
+ 	} while (0);
+
   do {
     printf("\nchecking full-match\n");
 
