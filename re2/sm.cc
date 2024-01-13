@@ -172,6 +172,11 @@ size_t RE2::SM::Module::capture_submatches(
 
 // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 
+bool RE2::SM::nullable() const {
+  assert(main_module_.prog_); // only after compilation
+  return main_module_.prog_->nullable();
+}
+
 void RE2::SM::clear() {
   main_module_.clear();
   delete rprog_;

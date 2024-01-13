@@ -106,7 +106,8 @@ std::string Prog::Inst::Dump() {
 }
 
 Prog::Prog()
-  : anchor_start_(false),
+  : nullable_(false),
+    anchor_start_(false),
     anchor_end_(false),
     reversed_(false),
     did_flatten_(false),
@@ -253,7 +254,7 @@ void Prog::Optimize() {
   // Insert kInstAltMatch instructions
   // Look for
   //   ip: Alt -> j | k
-  //	  j: ByteRange [00-FF] -> ip
+  //    j: ByteRange [00-FF] -> ip
   //    k: Match
   // or the reverse (the above is the greedy one).
   // Rewrite Alt to AltMatch.

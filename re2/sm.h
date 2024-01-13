@@ -145,7 +145,7 @@ class RE2::SM {
     return options_;
   }
 
-  size_t switch_case_count() {
+  size_t switch_case_count() const {
     assert(kind_ == kRegexpSwitch);
     return switch_case_module_array_.size();
   }
@@ -169,6 +169,8 @@ class RE2::SM {
     assert(kind_ == kRegexpSwitch);
     return switch_case_module_array_[id]->capture_count();
   }
+
+  bool nullable() const;
 
   // compilation
 

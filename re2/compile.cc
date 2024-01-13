@@ -1136,6 +1136,7 @@ Prog* Compiler::Compile(Regexp* re, bool reversed, int64_t max_mem) {
   c.reversed_ = false;
   all = c.Cat(all, c.Match(0));
 
+  c.prog_->set_nullable(all.nullable);
   c.prog_->set_reversed(reversed);
   if (c.prog_->reversed()) {
     c.prog_->set_anchor_start(is_anchor_end);
@@ -1225,6 +1226,7 @@ Prog* Compiler::CompileSet(Regexp* re, RE2::Anchor anchor, int64_t max_mem) {
   if (c.failed_)
     return NULL;
 
+  c.prog_->set_nullable(all.nullable);
   c.prog_->set_anchor_start(true);
   c.prog_->set_anchor_end(true);
 

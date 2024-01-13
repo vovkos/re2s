@@ -210,6 +210,8 @@ class Prog {
   size_t bit_state_text_max_size() { return bit_state_text_max_size_; }
   int64_t dfa_mem() { return dfa_mem_; }
   void set_dfa_mem(int64_t dfa_mem) { dfa_mem_ = dfa_mem; }
+  bool nullable() { return nullable_; }
+  void set_nullable(bool b) { nullable_ = b; }
   bool anchor_start() { return anchor_start_; }
   void set_anchor_start(bool b) { anchor_start_ = b; }
   bool anchor_end() { return anchor_end_; }
@@ -411,6 +413,7 @@ class Prog {
 
   void DeleteDFA(DFA* dfa);
 
+  bool nullable_;           // regexp accepts empty input
   bool anchor_start_;       // regexp has explicit start anchor
   bool anchor_end_;         // regexp has explicit end anchor
   bool reversed_;           // whether program runs backward over input
